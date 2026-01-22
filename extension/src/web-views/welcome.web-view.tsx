@@ -2,7 +2,7 @@ import { WebViewProps } from "@papi/core";
 import papi from "@papi/frontend";
 import { useProjectSetting } from "@papi/frontend/react";
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { BookChapterControl, Button, ComboBox, Label } from "platform-bible-react";
+import { BookChapterControl, Button, Checkbox, ComboBox, Label } from "platform-bible-react";
 import { isPlatformError, getChaptersForBook } from "platform-bible-utils";
 import { Canon } from "@sillsdev/scripture";
 
@@ -21,6 +21,11 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
   // End chapter for range selection (defaults to start chapter)
   const [endChapter, setEndChapter] = useState(1);
+
+  // Content filter toggles (all disabled by default)
+  const [includeFootnotes, setIncludeFootnotes] = useState(false);
+  const [includeCrossRefs, setIncludeCrossRefs] = useState(false);
+  const [includeIntro, setIncludeIntro] = useState(false);
 
   // Get chapter count for current book
   const chapterCount = useMemo(() => {
@@ -195,19 +200,30 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   type ViewMode = "formatted" | "usfm" | "usj";
   const [viewMode, setViewMode] = useState<ViewMode>("formatted");
 
+  // Helper to check if a marker is an introduction marker
+  const isIntroMarker = (marker: string): boolean => {
+    // Intro markers: imt, is, ip, ipi, im, imi, ipq, imq, ipr, iq, ib, ili, iot, io, iex, ie
+    return /^(imt\d?|is\d?|ip|ipi|im|imi|ipq|imq|ipr|iq\d?|ib|ili\d?|iot|io\d?|iex|ie|rem)$/.test(marker);
+  };
+
+  // Helper to check if a marker is a cross-reference marker
+  const isCrossRefMarker = (marker: string): boolean => {
+    return marker === "x" || marker === "r";
+  };
+
   // Convert USJ to USFM text
   const usfmText = useMemo(() => {
     if (isLoading) return "Loading...";
     if (!chaptersUSJ.length) return "No scripture data available. Select a project.";
 
-    const convertToUsfm = (content: (UsjNode | string)[]): string => {
+    const convertToUsfm = (content: (UsjNode | string)[], isFirstChapter: boolean): string => {
       return content
         .map((item) => {
           if (typeof item === "string") return item;
           const node = item as UsjNode;
 
           if (node.type === "book" && node.code) {
-            const bookContent = node.content ? convertToUsfm(node.content) : "";
+            const bookContent = node.content ? convertToUsfm(node.content, isFirstChapter) : "";
             return `\\id ${node.code} ${bookContent}\n`;
           }
           if (node.type === "chapter" && node.number) {
@@ -217,19 +233,35 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             return `\\v ${node.number} `;
           }
           if (node.type === "para" && node.marker) {
-            const paraContent = node.content ? convertToUsfm(node.content) : "";
+            // Skip intro paragraphs if not including intro (only for chapter 1)
+            if (!includeIntro && isFirstChapter && isIntroMarker(node.marker)) {
+              return "";
+            }
+            // Skip cross-reference paragraphs (\r) if not including cross-refs
+            if (!includeCrossRefs && node.marker === "r") {
+              return "";
+            }
+            const paraContent = node.content ? convertToUsfm(node.content, isFirstChapter) : "";
             return `\\${node.marker} ${paraContent}\n`;
           }
           if (node.type === "char" && node.marker) {
-            const charContent = node.content ? convertToUsfm(node.content) : "";
+            const charContent = node.content ? convertToUsfm(node.content, isFirstChapter) : "";
             return `\\${node.marker} ${charContent}\\${node.marker}*`;
           }
           if (node.type === "note" && node.marker) {
-            const noteContent = node.content ? convertToUsfm(node.content) : "";
+            // Skip footnotes if not including them
+            if (!includeFootnotes && node.marker === "f") {
+              return "";
+            }
+            // Skip cross-references if not including them
+            if (!includeCrossRefs && isCrossRefMarker(node.marker)) {
+              return "";
+            }
+            const noteContent = node.content ? convertToUsfm(node.content, isFirstChapter) : "";
             return `\\${node.marker} ${node.caller || "+"} ${noteContent}\\${node.marker}*`;
           }
           if (node.content) {
-            return convertToUsfm(node.content);
+            return convertToUsfm(node.content, isFirstChapter);
           }
           return "";
         })
@@ -238,21 +270,22 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
     // Combine all chapters' USFM
     return chaptersUSJ
-      .map((chapter) => {
+      .map((chapter, idx) => {
         if (chapter.content) {
-          return convertToUsfm(chapter.content as (UsjNode | string)[]);
+          const isFirstChapter = idx === 0 && scrRef.chapterNum === 1;
+          return convertToUsfm(chapter.content as (UsjNode | string)[], isFirstChapter);
         }
         return "";
       })
       .join("\n");
-  }, [chaptersUSJ, isLoading]);
+  }, [chaptersUSJ, isLoading, includeFootnotes, includeCrossRefs, includeIntro, scrRef.chapterNum]);
 
   // Convert USJ to formatted HTML-like preview
   const formattedPreview = useMemo(() => {
     if (isLoading) return <div>Loading...</div>;
     if (!chaptersUSJ.length) return <div>No scripture data available. Select a project.</div>;
 
-    const renderContent = (content: (UsjNode | string)[], key = ""): React.ReactNode[] => {
+    const renderContent = (content: (UsjNode | string)[], key = "", isFirstChapter = false): React.ReactNode[] => {
       return content.map((item, idx) => {
         const itemKey = `${key}-${idx}`;
         if (typeof item === "string") return <span key={itemKey}>{item}</span>;
@@ -274,9 +307,19 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           );
         }
         if (node.type === "para" && node.marker) {
+          // Skip intro paragraphs if not including intro (only for chapter 1)
+          if (!includeIntro && isFirstChapter && isIntroMarker(node.marker)) {
+            return null;
+          }
+          // Skip cross-reference paragraphs (\r) if not including cross-refs
+          if (!includeCrossRefs && node.marker === "r") {
+            return null;
+          }
+
           const isHeader = node.marker.startsWith("s") || node.marker === "ms";
           const isPoetry = node.marker.startsWith("q");
           const isBlank = node.marker === "b";
+          const isIntro = isIntroMarker(node.marker);
 
           if (isBlank) {
             return <div key={itemKey} className="tw-h-3" />;
@@ -284,7 +327,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           if (isHeader) {
             return (
               <div key={itemKey} className="tw-font-semibold tw-mt-4 tw-mb-2 tw-text-foreground">
-                {node.content && renderContent(node.content, itemKey)}
+                {node.content && renderContent(node.content, itemKey, isFirstChapter)}
               </div>
             );
           }
@@ -292,13 +335,20 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             const indent = parseInt(node.marker.slice(1) || "1", 10);
             return (
               <div key={itemKey} className="tw-mb-1" style={{ marginLeft: `${indent * 1.5}rem` }}>
-                {node.content && renderContent(node.content, itemKey)}
+                {node.content && renderContent(node.content, itemKey, isFirstChapter)}
               </div>
+            );
+          }
+          if (isIntro) {
+            return (
+              <p key={itemKey} className="tw-mb-2 tw-italic tw-text-muted-foreground">
+                {node.content && renderContent(node.content, itemKey, isFirstChapter)}
+              </p>
             );
           }
           return (
             <p key={itemKey} className="tw-mb-2">
-              {node.content && renderContent(node.content, itemKey)}
+              {node.content && renderContent(node.content, itemKey, isFirstChapter)}
             </p>
           );
         }
@@ -312,11 +362,19 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           if (isWordsOfJesus) className += "tw-text-red-600 ";
           return (
             <span key={itemKey} className={className}>
-              {node.content && renderContent(node.content, itemKey)}
+              {node.content && renderContent(node.content, itemKey, isFirstChapter)}
             </span>
           );
         }
-        if (node.type === "note") {
+        if (node.type === "note" && node.marker) {
+          // Skip footnotes if not including them
+          if (!includeFootnotes && node.marker === "f") {
+            return null;
+          }
+          // Skip cross-references if not including them
+          if (!includeCrossRefs && isCrossRefMarker(node.marker)) {
+            return null;
+          }
           return (
             <sup key={itemKey} className="tw-text-xs tw-text-muted-foreground tw-cursor-help" title="Footnote">
               [{node.caller || "*"}]
@@ -324,7 +382,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           );
         }
         if (node.content) {
-          return <span key={itemKey}>{renderContent(node.content, itemKey)}</span>;
+          return <span key={itemKey}>{renderContent(node.content, itemKey, isFirstChapter)}</span>;
         }
         return null;
       });
@@ -333,20 +391,76 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     // Render all chapters
     return (
       <div>
-        {chaptersUSJ.map((chapter, chapterIdx) => (
-          <div key={`chapter-${chapterIdx}`}>
-            {chapter.content && renderContent(chapter.content as (UsjNode | string)[], `ch-${chapterIdx}`)}
-          </div>
-        ))}
+        {chaptersUSJ.map((chapter, chapterIdx) => {
+          const isFirstChapter = chapterIdx === 0 && scrRef.chapterNum === 1;
+          return (
+            <div key={`chapter-${chapterIdx}`}>
+              {chapter.content && renderContent(chapter.content as (UsjNode | string)[], `ch-${chapterIdx}`, isFirstChapter)}
+            </div>
+          );
+        })}
       </div>
     );
-  }, [chaptersUSJ, isLoading]);
+  }, [chaptersUSJ, isLoading, includeFootnotes, includeCrossRefs, includeIntro, scrRef.chapterNum]);
 
-  // Format USJ as JSON for debug view
+  // Filter USJ content based on toggles
+  const filterUsjContent = useCallback(
+    (content: (UsjNode | string)[], isFirstChapter: boolean): (UsjNode | string)[] => {
+      return content
+        .map((item) => {
+          if (typeof item === "string") return item;
+          const node = item as UsjNode;
+
+          // Skip intro paragraphs if not including intro (only for chapter 1)
+          if (node.type === "para" && node.marker) {
+            if (!includeIntro && isFirstChapter && isIntroMarker(node.marker)) {
+              return null;
+            }
+            if (!includeCrossRefs && node.marker === "r") {
+              return null;
+            }
+          }
+
+          // Skip footnotes and cross-references
+          if (node.type === "note" && node.marker) {
+            if (!includeFootnotes && node.marker === "f") {
+              return null;
+            }
+            if (!includeCrossRefs && isCrossRefMarker(node.marker)) {
+              return null;
+            }
+          }
+
+          // Recursively filter content
+          if (node.content) {
+            const filteredContent = filterUsjContent(node.content, isFirstChapter);
+            return { ...node, content: filteredContent };
+          }
+
+          return node;
+        })
+        .filter((item): item is UsjNode | string => item !== null);
+    },
+    [includeFootnotes, includeCrossRefs, includeIntro]
+  );
+
+  // Format USJ as JSON for debug view (with filtering applied)
   const usjJson = useMemo(() => {
     if (!chaptersUSJ.length) return "";
-    return JSON.stringify(chaptersUSJ, null, 2);
-  }, [chaptersUSJ]);
+
+    const filteredChapters = chaptersUSJ.map((chapter, idx) => {
+      const isFirstChapter = idx === 0 && scrRef.chapterNum === 1;
+      if (chapter.content) {
+        return {
+          ...chapter,
+          content: filterUsjContent(chapter.content as (UsjNode | string)[], isFirstChapter),
+        };
+      }
+      return chapter;
+    });
+
+    return JSON.stringify(filteredChapters, null, 2);
+  }, [chaptersUSJ, filterUsjContent, scrRef.chapterNum]);
 
   return (
     <div className="tw-p-4 tw-min-h-screen tw-bg-background tw-text-foreground">
@@ -389,6 +503,39 @@ globalThis.webViewComponent = function ExportToFlexWebView({
               buttonPlaceholder="End"
               buttonClassName="tw-w-24"
             />
+          </div>
+        </div>
+
+        {/* Content Options */}
+        <div className="tw-mb-4">
+          <Label className="tw-text-sm tw-font-medium tw-mb-2 tw-block tw-text-foreground">
+            Include in Export:
+          </Label>
+          <div className="tw-flex tw-flex-col tw-gap-2">
+            <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+              <Checkbox
+                checked={includeFootnotes}
+                onCheckedChange={(checked: boolean | "indeterminate") => setIncludeFootnotes(checked === true)}
+              />
+              <span className="tw-text-sm tw-text-foreground">Footnotes</span>
+            </label>
+            <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+              <Checkbox
+                checked={includeCrossRefs}
+                onCheckedChange={(checked: boolean | "indeterminate") => setIncludeCrossRefs(checked === true)}
+              />
+              <span className="tw-text-sm tw-text-foreground">Cross References (\x and \r)</span>
+            </label>
+            <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+              <Checkbox
+                checked={includeIntro}
+                onCheckedChange={(checked: boolean | "indeterminate") => setIncludeIntro(checked === true)}
+                disabled={scrRef.chapterNum !== 1}
+              />
+              <span className={`tw-text-sm ${scrRef.chapterNum !== 1 ? "tw-text-muted-foreground" : "tw-text-foreground"}`}>
+                Introduction (for chapter 1)
+              </span>
+            </label>
           </div>
         </div>
 
