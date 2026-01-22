@@ -1,5 +1,9 @@
 import { WebViewProps } from "@papi/core";
-import { useDialogCallback, useProjectData } from "@papi/frontend/react";
+import {
+  useDialogCallback,
+  useProjectData,
+  useProjectSetting,
+} from "@papi/frontend/react";
 import { useState, useMemo, useCallback } from "react";
 import { BookChapterControl, Button, Label } from "platform-bible-react";
 import { isPlatformError } from "platform-bible-utils";
@@ -37,6 +41,14 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     "platformScripture.USJ_Chapter",
     projectId ?? undefined
   ).ChapterUSJ(scrRef, undefined);
+
+  // Get project name for display
+  const [projectName] = useProjectSetting(projectId ?? undefined, "platform.name", "");
+  const displayProjectName = useMemo(() => {
+    if (!projectId) return "No project selected";
+    if (isPlatformError(projectName)) return projectId;
+    return projectName || projectId;
+  }, [projectId, projectName]);
 
   type ViewMode = "formatted" | "usfm" | "usj";
   const [viewMode, setViewMode] = useState<ViewMode>("formatted");
@@ -205,7 +217,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         {/* Project Selection */}
         <div className="tw-mb-4 tw-p-3 tw-border tw-border-border tw-rounded-md tw-flex tw-items-center tw-gap-3 tw-bg-muted">
           <Label className="tw-text-sm tw-text-foreground">
-            Project: {projectId ?? "No project selected"}
+            Project: {displayProjectName}
           </Label>
           <Button variant="outline" size="sm" onClick={() => selectProject()}>
             Select Project
