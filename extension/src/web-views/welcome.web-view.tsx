@@ -1,12 +1,15 @@
 import { WebViewProps } from "@papi/core";
-import {
-  useDialogCallback,
-  useProjectData,
-  useProjectSetting,
-} from "@papi/frontend/react";
-import { useState, useMemo, useCallback } from "react";
-import { BookChapterControl, Button, Label } from "platform-bible-react";
+import papi from "@papi/frontend";
+import { useProjectData, useProjectSetting } from "@papi/frontend/react";
+import { useState, useMemo, useCallback, useEffect } from "react";
+import { BookChapterControl, Button, ComboBox, Label } from "platform-bible-react";
 import { isPlatformError } from "platform-bible-utils";
+
+// Project option type for ComboBox
+type ProjectOption = {
+  label: string;
+  id: string;
+};
 
 globalThis.webViewComponent = function ExportToFlexWebView({
   projectId,
@@ -15,40 +18,83 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // Scripture reference state with setter for BookChapterControl
   const [scrRef, setScrRef] = useState({ book: "GEN", chapterNum: 1, verseNum: 1 });
 
-  // Project selection dialog
-  const selectProject = useDialogCallback(
-    "platform.selectProject",
-    useMemo(
-      () => ({
-        title: "Select Paratext Project",
-        prompt: "Choose a project to export to FLEx:",
-        includeProjectInterfaces: ["platformScripture.USJ_Chapter"],
-      }),
-      []
-    ),
-    useCallback(
-      (selectedProjectId: string | undefined) => {
-        if (selectedProjectId) {
-          updateWebViewDefinition({ projectId: selectedProjectId });
+  // Project options state for ComboBox
+  const [projectOptions, setProjectOptions] = useState<ProjectOption[]>([]);
+
+  // Fetch available projects on mount
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchProjects = async () => {
+      try {
+        const options: ProjectOption[] = [];
+        const allMetadata = await papi.projectLookup.getMetadataForAllProjects({
+          includeProjectInterfaces: ["platformScripture.USJ_Chapter"],
+        });
+
+        await Promise.all(
+          allMetadata.map(async (metadata: { id: string }) => {
+            try {
+              const pdp = await papi.projectDataProviders.get("platform.base", metadata.id);
+              const name = await pdp.getSetting("platform.name");
+              options.push({
+                label: name || metadata.id,
+                id: metadata.id,
+              });
+            } catch {
+              options.push({
+                label: metadata.id,
+                id: metadata.id,
+              });
+            }
+          })
+        );
+
+        if (!cancelled) {
+          setProjectOptions(options.sort((a, b) => a.label.localeCompare(b.label)));
         }
-      },
-      [updateWebViewDefinition]
-    )
+      } catch (err) {
+        console.error("Failed to fetch projects:", err);
+      }
+    };
+
+    fetchProjects();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Find selected project option
+  const selectedProject = useMemo(() => {
+    if (!projectId || !projectOptions.length) return undefined;
+    return projectOptions.find((p) => p.id === projectId);
+  }, [projectId, projectOptions]);
+
+  // Handle project selection from ComboBox
+  const handleProjectChange = useCallback(
+    (option: ProjectOption | undefined) => {
+      if (option) {
+        updateWebViewDefinition({ projectId: option.id });
+      }
+    },
+    [updateWebViewDefinition]
   );
+
+  // Get project name for display (fallback if ComboBox hasn't loaded)
+  const [projectNameSetting] = useProjectSetting(projectId ?? undefined, "platform.name", "");
+  const displayProjectName = useMemo(() => {
+    if (!projectId) return "No project selected";
+    if (selectedProject) return selectedProject.label;
+    if (isPlatformError(projectNameSetting)) return projectId;
+    return projectNameSetting || projectId;
+  }, [projectId, selectedProject, projectNameSetting]);
 
   // Get USJ data for the current chapter
   const [chapterUSJ, , isLoading] = useProjectData(
     "platformScripture.USJ_Chapter",
     projectId ?? undefined
   ).ChapterUSJ(scrRef, undefined);
-
-  // Get project name for display
-  const [projectName] = useProjectSetting(projectId ?? undefined, "platform.name", "");
-  const displayProjectName = useMemo(() => {
-    if (!projectId) return "No project selected";
-    if (isPlatformError(projectName)) return projectId;
-    return projectName || projectId;
-  }, [projectId, projectName]);
 
   type ViewMode = "formatted" | "usfm" | "usj";
   const [viewMode, setViewMode] = useState<ViewMode>("formatted");
@@ -215,13 +261,18 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         </h1>
 
         {/* Project Selection */}
-        <div className="tw-mb-4 tw-p-3 tw-border tw-border-border tw-rounded-md tw-flex tw-items-center tw-gap-3 tw-bg-muted">
-          <Label className="tw-text-sm tw-text-foreground">
-            Project: {displayProjectName}
-          </Label>
-          <Button variant="outline" size="sm" onClick={() => selectProject()}>
-            Select Project
-          </Button>
+        <div className="tw-mb-4 tw-flex tw-items-center tw-gap-3">
+          <Label className="tw-text-sm tw-text-foreground">Project:</Label>
+          <ComboBox<ProjectOption>
+            options={projectOptions || []}
+            value={selectedProject}
+            onChange={handleProjectChange}
+            getOptionLabel={(option: ProjectOption) => option.label}
+            buttonPlaceholder="Select a project"
+            textPlaceholder="Search projects..."
+            commandEmptyMessage="No projects found"
+            buttonVariant="outline"
+          />
         </div>
 
         {/* Scripture Reference Selector */}
