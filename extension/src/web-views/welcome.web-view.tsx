@@ -1,9 +1,10 @@
 import { WebViewProps } from "@papi/core";
 import papi from "@papi/frontend";
-import { useProjectData, useProjectSetting } from "@papi/frontend/react";
+import { useProjectSetting } from "@papi/frontend/react";
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { BookChapterControl, Button, ComboBox, Label } from "platform-bible-react";
-import { isPlatformError } from "platform-bible-utils";
+import { isPlatformError, getChaptersForBook } from "platform-bible-utils";
+import { Canon } from "@sillsdev/scripture";
 
 // Project option type for ComboBox
 type ProjectOption = {
@@ -17,6 +18,35 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 }: WebViewProps) {
   // Scripture reference state with setter for BookChapterControl
   const [scrRef, setScrRef] = useState({ book: "GEN", chapterNum: 1, verseNum: 1 });
+
+  // End chapter for range selection (defaults to start chapter)
+  const [endChapter, setEndChapter] = useState(1);
+
+  // Get chapter count for current book
+  const chapterCount = useMemo(() => {
+    const bookNum = Canon.bookIdToNumber(scrRef.book);
+    const count = getChaptersForBook(bookNum);
+    return count > 0 ? count : 1;
+  }, [scrRef.book]);
+
+  // When start chapter changes, reset end chapter to match (and clamp to valid range)
+  const handleStartRefChange = useCallback(
+    (newScrRef: { book: string; chapterNum: number; verseNum: number }) => {
+      setScrRef(newScrRef);
+      // Reset end chapter to start chapter when start changes
+      setEndChapter(newScrRef.chapterNum);
+    },
+    []
+  );
+
+  // End chapter options: only chapters >= start chapter
+  const endChapterOptions = useMemo(() => {
+    const options: number[] = [];
+    for (let i = scrRef.chapterNum; i <= chapterCount; i++) {
+      options.push(i);
+    }
+    return options;
+  }, [scrRef.chapterNum, chapterCount]);
 
   // Project options state for ComboBox
   const [projectOptions, setProjectOptions] = useState<ProjectOption[]>([]);
@@ -93,15 +123,6 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     return projectNameSetting || projectId;
   }, [projectId, selectedProject, projectNameSetting]);
 
-  // Get USJ data for the current chapter
-  const [chapterUSJ, , isLoading] = useProjectData(
-    "platformScripture.USJ_Chapter",
-    projectId ?? undefined
-  ).ChapterUSJ(scrRef, undefined);
-
-  type ViewMode = "formatted" | "usfm" | "usj";
-  const [viewMode, setViewMode] = useState<ViewMode>("formatted");
-
   // USJ node type interface
   interface UsjNode {
     type?: string;
@@ -112,11 +133,72 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     caller?: string;
   }
 
+  // USJ data type for chapter
+  interface ChapterUSJData {
+    type?: string;
+    version?: string;
+    content?: (UsjNode | string)[];
+  }
+
+  // State for fetched chapters
+  const [chaptersUSJ, setChaptersUSJ] = useState<ChapterUSJData[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Fetch all chapters in the range
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchChapters = async () => {
+      if (!projectId) {
+        setChaptersUSJ([]);
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        const pdp = await papi.projectDataProviders.get(
+          "platformScripture.USJ_Chapter",
+          projectId
+        );
+
+        const chapters: ChapterUSJData[] = [];
+        for (let ch = scrRef.chapterNum; ch <= endChapter; ch++) {
+          const ref = { book: scrRef.book, chapterNum: ch, verseNum: 1 };
+          const usj = await pdp.getChapterUSJ(ref);
+          if (!cancelled && usj && !isPlatformError(usj)) {
+            chapters.push(usj as ChapterUSJData);
+          }
+        }
+
+        if (!cancelled) {
+          setChaptersUSJ(chapters);
+        }
+      } catch (err) {
+        console.error("Failed to fetch chapters:", err);
+        if (!cancelled) {
+          setChaptersUSJ([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    fetchChapters();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, scrRef.book, scrRef.chapterNum, endChapter]);
+
+  type ViewMode = "formatted" | "usfm" | "usj";
+  const [viewMode, setViewMode] = useState<ViewMode>("formatted");
+
   // Convert USJ to USFM text
   const usfmText = useMemo(() => {
     if (isLoading) return "Loading...";
-    if (!chapterUSJ) return "No scripture data available. Select a project.";
-    if (isPlatformError(chapterUSJ)) return `Error: ${chapterUSJ.message}`;
+    if (!chaptersUSJ.length) return "No scripture data available. Select a project.";
 
     const convertToUsfm = (content: (UsjNode | string)[]): string => {
       return content
@@ -154,17 +236,21 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         .join("");
     };
 
-    if (chapterUSJ.content) {
-      return convertToUsfm(chapterUSJ.content as (UsjNode | string)[]);
-    }
-    return "No content in USJ";
-  }, [chapterUSJ, isLoading]);
+    // Combine all chapters' USFM
+    return chaptersUSJ
+      .map((chapter) => {
+        if (chapter.content) {
+          return convertToUsfm(chapter.content as (UsjNode | string)[]);
+        }
+        return "";
+      })
+      .join("\n");
+  }, [chaptersUSJ, isLoading]);
 
   // Convert USJ to formatted HTML-like preview
   const formattedPreview = useMemo(() => {
     if (isLoading) return <div>Loading...</div>;
-    if (!chapterUSJ) return <div>No scripture data available. Select a project.</div>;
-    if (isPlatformError(chapterUSJ)) return <div>Error: {chapterUSJ.message}</div>;
+    if (!chaptersUSJ.length) return <div>No scripture data available. Select a project.</div>;
 
     const renderContent = (content: (UsjNode | string)[], key = ""): React.ReactNode[] => {
       return content.map((item, idx) => {
@@ -244,17 +330,23 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       });
     };
 
-    if (chapterUSJ.content) {
-      return <div>{renderContent(chapterUSJ.content as (UsjNode | string)[])}</div>;
-    }
-    return <div>No content in USJ</div>;
-  }, [chapterUSJ, isLoading]);
+    // Render all chapters
+    return (
+      <div>
+        {chaptersUSJ.map((chapter, chapterIdx) => (
+          <div key={`chapter-${chapterIdx}`}>
+            {chapter.content && renderContent(chapter.content as (UsjNode | string)[], `ch-${chapterIdx}`)}
+          </div>
+        ))}
+      </div>
+    );
+  }, [chaptersUSJ, isLoading]);
 
   // Format USJ as JSON for debug view
   const usjJson = useMemo(() => {
-    if (!chapterUSJ || isPlatformError(chapterUSJ)) return "";
-    return JSON.stringify(chapterUSJ, null, 2);
-  }, [chapterUSJ]);
+    if (!chaptersUSJ.length) return "";
+    return JSON.stringify(chaptersUSJ, null, 2);
+  }, [chaptersUSJ]);
 
   return (
     <div className="tw-p-4 tw-min-h-screen tw-bg-background tw-text-foreground">
@@ -281,12 +373,23 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         {/* Scripture Reference Selector */}
         <div className="tw-mb-4">
           <Label className="tw-text-sm tw-font-medium tw-mb-2 tw-block tw-text-foreground">
-            Select Book and Chapter:
+            Select Book and Chapter Range:
           </Label>
-          <BookChapterControl
-            scrRef={scrRef}
-            handleSubmit={(newScrRef) => setScrRef(newScrRef)}
-          />
+          <div className="tw-flex tw-items-center tw-gap-3 tw-flex-wrap">
+            <BookChapterControl
+              scrRef={scrRef}
+              handleSubmit={handleStartRefChange}
+            />
+            <Label className="tw-text-sm tw-text-foreground">to</Label>
+            <ComboBox<number>
+              options={endChapterOptions}
+              value={endChapter}
+              onChange={(val: number | undefined) => val && setEndChapter(val)}
+              getOptionLabel={(opt: number) => opt.toString()}
+              buttonPlaceholder="End"
+              buttonClassName="tw-w-24"
+            />
+          </div>
         </div>
 
         {/* Preview Toggle */}
@@ -352,9 +455,11 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         {/* Status */}
         <div className="tw-mt-4 tw-text-xs tw-text-muted-foreground">
           {isLoading && "Loading scripture data..."}
-          {!isLoading && chapterUSJ && !isPlatformError(chapterUSJ) && (
+          {!isLoading && chaptersUSJ.length > 0 && (
             <span>
-              Loaded {scrRef.book} chapter {scrRef.chapterNum}
+              Loaded {scrRef.book} {scrRef.chapterNum === endChapter
+                ? `chapter ${scrRef.chapterNum}`
+                : `chapters ${scrRef.chapterNum}-${endChapter}`}
             </span>
           )}
         </div>
