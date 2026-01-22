@@ -21,13 +21,14 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // Project options state for ComboBox
   const [projectOptions, setProjectOptions] = useState<ProjectOption[]>([]);
 
-  // Fetch available projects on mount
+  // Fetch available projects on mount (only editable projects, not downloaded resources)
   useEffect(() => {
     let cancelled = false;
 
     const fetchProjects = async () => {
       try {
         const options: ProjectOption[] = [];
+        // Get all projects that support USJ_Chapter
         const allMetadata = await papi.projectLookup.getMetadataForAllProjects({
           includeProjectInterfaces: ["platformScripture.USJ_Chapter"],
         });
@@ -36,16 +37,18 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           allMetadata.map(async (metadata: { id: string }) => {
             try {
               const pdp = await papi.projectDataProviders.get("platform.base", metadata.id);
+              // Check if project is editable (resources are not editable)
+              // Note: platform.isEditable is project-level, not user-permission-level
+              const isEditable = await pdp.getSetting("platform.isEditable");
+              if (!isEditable) return; // Skip resources
+
               const name = await pdp.getSetting("platform.name");
               options.push({
                 label: name || metadata.id,
                 id: metadata.id,
               });
             } catch {
-              options.push({
-                label: metadata.id,
-                id: metadata.id,
-              });
+              // If we can't get settings, skip this project
             }
           })
         );
