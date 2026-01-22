@@ -24,7 +24,7 @@ const welcomeWebViewProvider: IWebViewProvider = {
       );
     return {
       ...savedWebView,
-      title: "flex-export - Welcome",
+      title: "Export Text to FLEx",
       content: welcomeWebView,
     };
   },

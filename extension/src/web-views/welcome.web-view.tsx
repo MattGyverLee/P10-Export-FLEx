@@ -114,14 +114,14 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
         if (node.type === "chapter" && node.number) {
           return (
-            <div key={itemKey} className="tw-text-lg tw-font-bold tw-mb-3 tw-text-gray-700">
+            <div key={itemKey} className="tw-text-lg tw-font-bold tw-mb-3 tw-text-foreground">
               Chapter {node.number}
             </div>
           );
         }
         if (node.type === "verse" && node.number) {
           return (
-            <sup key={itemKey} className="tw-text-xs tw-font-bold tw-text-blue-600 tw-mr-1">
+            <sup key={itemKey} className="tw-text-xs tw-font-bold tw-text-primary tw-mr-1">
               {node.number}
             </sup>
           );
@@ -136,7 +136,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           }
           if (isHeader) {
             return (
-              <div key={itemKey} className="tw-font-semibold tw-text-gray-700 tw-mt-4 tw-mb-2">
+              <div key={itemKey} className="tw-font-semibold tw-mt-4 tw-mb-2 tw-text-foreground">
                 {node.content && renderContent(node.content, itemKey)}
               </div>
             );
@@ -171,7 +171,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         }
         if (node.type === "note") {
           return (
-            <sup key={itemKey} className="tw-text-xs tw-text-gray-500 tw-cursor-help" title="Footnote">
+            <sup key={itemKey} className="tw-text-xs tw-text-muted-foreground tw-cursor-help" title="Footnote">
               [{node.caller || "*"}]
             </sup>
           );
@@ -196,15 +196,15 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   }, [chapterUSJ]);
 
   return (
-    <div className="tw-p-4 tw-bg-white tw-min-h-screen">
+    <div className="tw-p-4 tw-min-h-screen tw-bg-background tw-text-foreground">
       <div className="tw-max-w-3xl tw-mx-auto">
-        <h1 className="tw-text-xl tw-font-bold tw-text-gray-800 tw-mb-4">
+        <h1 className="tw-text-xl tw-font-bold tw-mb-4 tw-text-foreground">
           Export to FLEx
         </h1>
 
         {/* Project Selection */}
-        <div className="tw-mb-4 tw-p-3 tw-bg-gray-50 tw-rounded-md tw-flex tw-items-center tw-gap-3">
-          <Label className="tw-text-sm tw-text-gray-600">
+        <div className="tw-mb-4 tw-p-3 tw-border tw-border-border tw-rounded-md tw-flex tw-items-center tw-gap-3 tw-bg-muted">
+          <Label className="tw-text-sm tw-text-foreground">
             Project: {projectId ?? "No project selected"}
           </Label>
           <Button variant="outline" size="sm" onClick={() => selectProject()}>
@@ -214,7 +214,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
         {/* Scripture Reference Selector */}
         <div className="tw-mb-4">
-          <Label className="tw-text-sm tw-font-medium tw-text-gray-700 tw-mb-2 tw-block">
+          <Label className="tw-text-sm tw-font-medium tw-mb-2 tw-block tw-text-foreground">
             Select Book and Chapter:
           </Label>
           <BookChapterControl
@@ -249,9 +249,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         </div>
 
         {/* Scripture Preview */}
-        <div className="tw-border tw-rounded-md tw-bg-gray-50">
-          <div className="tw-p-3 tw-border-b tw-bg-gray-100">
-            <Label className="tw-text-sm tw-font-medium tw-text-gray-700">
+        <div className="tw-border tw-border-border tw-rounded-md tw-bg-card">
+          <div className="tw-p-3 tw-border-b tw-border-border tw-bg-muted">
+            <Label className="tw-text-sm tw-font-medium tw-text-foreground">
               {viewMode === "formatted" && "Scripture Preview"}
               {viewMode === "usfm" && "USFM Preview"}
               {viewMode === "usj" && "USJ JSON Data"}
@@ -259,13 +259,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           </div>
           <div className="tw-p-4 tw-min-h-64 tw-max-h-96 tw-overflow-auto">
             {viewMode === "formatted" && (
-              <div className="tw-text-sm tw-text-gray-800 tw-leading-relaxed">
+              <div className="tw-text-sm tw-leading-relaxed tw-text-foreground">
                 {formattedPreview}
               </div>
             )}
             {viewMode === "usfm" && (
               <pre
-                className="tw-text-sm tw-font-mono tw-text-gray-700"
+                className="tw-text-sm tw-font-mono tw-text-foreground"
                 style={{
                   whiteSpace: "pre-wrap",
                   wordWrap: "break-word",
@@ -276,7 +276,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
               </pre>
             )}
             {viewMode === "usj" && (
-              <pre className="tw-text-xs tw-font-mono tw-whitespace-pre-wrap tw-text-gray-700">
+              <pre className="tw-text-xs tw-font-mono tw-whitespace-pre-wrap tw-text-foreground">
                 {usjJson || "No USJ data"}
               </pre>
             )}
@@ -284,7 +284,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         </div>
 
         {/* Status */}
-        <div className="tw-mt-4 tw-text-xs tw-text-gray-500">
+        <div className="tw-mt-4 tw-text-xs tw-text-muted-foreground">
           {isLoading && "Loading scripture data..."}
           {!isLoading && chapterUSJ && !isPlatformError(chapterUSJ) && (
             <span>
