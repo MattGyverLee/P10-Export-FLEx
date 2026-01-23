@@ -33,7 +33,8 @@
       "%flexExport_chapter%": "Chapter",
       "%flexExport_remark%": "Remark:",
       "%flexExport_figure%": "Figure:",
-      "%flexExport_footnote%": "Footnote"
+      "%flexExport_footnote%": "Footnote",
+      "%flexExport_resourceNotExportable%": "Resources cannot be exported. Please select an editable project."
     },
     "es": {
       "%flexExport_menuItem%": "Exportar capítulo(s) a FLEx...",
@@ -67,7 +68,8 @@
       "%flexExport_chapter%": "Capítulo",
       "%flexExport_remark%": "Comentario:",
       "%flexExport_figure%": "Figura:",
-      "%flexExport_footnote%": "Nota al pie"
+      "%flexExport_footnote%": "Nota al pie",
+      "%flexExport_resourceNotExportable%": "Los recursos no se pueden exportar. Seleccione un proyecto editable."
     },
     "fr": {
       "%flexExport_menuItem%": "Exporter chapitre(s) vers FLEx...",
@@ -101,7 +103,8 @@
       "%flexExport_chapter%": "Chapitre",
       "%flexExport_remark%": "Remarque :",
       "%flexExport_figure%": "Figure :",
-      "%flexExport_footnote%": "Note de bas de page"
+      "%flexExport_footnote%": "Note de bas de page",
+      "%flexExport_resourceNotExportable%": "Les ressources ne peuvent pas être exportées. Veuillez sélectionner un projet modifiable."
     },
     "pt": {
       "%flexExport_menuItem%": "Exportar capítulo(s) para FLEx...",
@@ -135,7 +138,8 @@
       "%flexExport_chapter%": "Capítulo",
       "%flexExport_remark%": "Observação:",
       "%flexExport_figure%": "Figura:",
-      "%flexExport_footnote%": "Nota de rodapé"
+      "%flexExport_footnote%": "Nota de rodapé",
+      "%flexExport_resourceNotExportable%": "Recursos não podem ser exportados. Selecione um projeto editável."
     },
     "de": {
       "%flexExport_menuItem%": "Kapitel nach FLEx exportieren...",
@@ -169,7 +173,8 @@
       "%flexExport_chapter%": "Kapitel",
       "%flexExport_remark%": "Anmerkung:",
       "%flexExport_figure%": "Abbildung:",
-      "%flexExport_footnote%": "Fußnote"
+      "%flexExport_footnote%": "Fußnote",
+      "%flexExport_resourceNotExportable%": "Ressourcen können nicht exportiert werden. Bitte wählen Sie ein bearbeitbares Projekt."
     },
     "id": {
       "%flexExport_menuItem%": "Ekspor pasal ke FLEx...",
@@ -203,7 +208,8 @@
       "%flexExport_chapter%": "Pasal",
       "%flexExport_remark%": "Catatan:",
       "%flexExport_figure%": "Gambar:",
-      "%flexExport_footnote%": "Catatan kaki"
+      "%flexExport_footnote%": "Catatan kaki",
+      "%flexExport_resourceNotExportable%": "Sumber daya tidak dapat diekspor. Silakan pilih proyek yang dapat diedit."
     },
     "ru": {
       "%flexExport_menuItem%": "Экспорт глав(ы) в FLEx...",
@@ -237,7 +243,8 @@
       "%flexExport_chapter%": "Глава",
       "%flexExport_remark%": "Примечание:",
       "%flexExport_figure%": "Иллюстрация:",
-      "%flexExport_footnote%": "Сноска"
+      "%flexExport_footnote%": "Сноска",
+      "%flexExport_resourceNotExportable%": "Ресурсы не могут быть экспортированы. Пожалуйста, выберите редактируемый проект."
     },
     "zh-Hans": {
       "%flexExport_menuItem%": "导出章节到 FLEx...",
@@ -271,7 +278,8 @@
       "%flexExport_chapter%": "章",
       "%flexExport_remark%": "备注：",
       "%flexExport_figure%": "图：",
-      "%flexExport_footnote%": "脚注"
+      "%flexExport_footnote%": "脚注",
+      "%flexExport_resourceNotExportable%": "资源无法导出。请选择一个可编辑的项目。"
     },
     "zh-Hant": {
       "%flexExport_menuItem%": "匯出章節到 FLEx...",
@@ -305,7 +313,8 @@
       "%flexExport_chapter%": "章",
       "%flexExport_remark%": "備註：",
       "%flexExport_figure%": "圖：",
-      "%flexExport_footnote%": "註腳"
+      "%flexExport_footnote%": "註腳",
+      "%flexExport_resourceNotExportable%": "資源無法匯出。請選擇一個可編輯的專案。"
     },
     "tr": {
       "%flexExport_menuItem%": "Bölüm(ler)i FLEx'e aktar...",
@@ -339,7 +348,8 @@
       "%flexExport_chapter%": "Bölüm",
       "%flexExport_remark%": "Açıklama:",
       "%flexExport_figure%": "Şekil:",
-      "%flexExport_footnote%": "Dipnot"
+      "%flexExport_footnote%": "Dipnot",
+      "%flexExport_resourceNotExportable%": "Kaynaklar dışa aktarılamaz. Lütfen düzenlenebilir bir proje seçin."
     },
     "vi": {
       "%flexExport_menuItem%": "Xuất chương sang FLEx...",
@@ -373,7 +383,8 @@
       "%flexExport_chapter%": "Chương",
       "%flexExport_remark%": "Ghi chú:",
       "%flexExport_figure%": "Hình:",
-      "%flexExport_footnote%": "Chú thích"
+      "%flexExport_footnote%": "Chú thích",
+      "%flexExport_resourceNotExportable%": "Không thể xuất tài nguyên. Vui lòng chọn một dự án có thể chỉnh sửa."
     },
     "ar": {
       "%flexExport_menuItem%": "تصدير الإصحاح(ات) إلى FLEx...",
@@ -407,7 +418,8 @@
       "%flexExport_chapter%": "الإصحاح",
       "%flexExport_remark%": "ملاحظة:",
       "%flexExport_figure%": "شكل:",
-      "%flexExport_footnote%": "حاشية"
+      "%flexExport_footnote%": "حاشية",
+      "%flexExport_resourceNotExportable%": "لا يمكن تصدير الموارد. يرجى اختيار مشروع قابل للتحرير."
     },
     "hi": {
       "%flexExport_menuItem%": "अध्याय FLEx में निर्यात करें...",
@@ -441,7 +453,8 @@
       "%flexExport_chapter%": "अध्याय",
       "%flexExport_remark%": "टिप्पणी:",
       "%flexExport_figure%": "चित्र:",
-      "%flexExport_footnote%": "पाद टिप्पणी"
+      "%flexExport_footnote%": "पाद टिप्पणी",
+      "%flexExport_resourceNotExportable%": "संसाधनों को निर्यात नहीं किया जा सकता। कृपया एक संपादन योग्य प्रोजेक्ट चुनें।"
     },
     "sw": {
       "%flexExport_menuItem%": "Hamisha sura hadi FLEx...",
@@ -475,7 +488,8 @@
       "%flexExport_chapter%": "Sura",
       "%flexExport_remark%": "Maelezo:",
       "%flexExport_figure%": "Mchoro:",
-      "%flexExport_footnote%": "Tanbihi"
+      "%flexExport_footnote%": "Tanbihi",
+      "%flexExport_resourceNotExportable%": "Rasilimali haziwezi kuhamishwa. Tafadhali chagua mradi unaoweza kuhaririwa."
     },
     "ko": {
       "%flexExport_menuItem%": "FLEx로 장 내보내기...",
@@ -509,7 +523,8 @@
       "%flexExport_chapter%": "장",
       "%flexExport_remark%": "비고:",
       "%flexExport_figure%": "그림:",
-      "%flexExport_footnote%": "각주"
+      "%flexExport_footnote%": "각주",
+      "%flexExport_resourceNotExportable%": "리소스는 내보낼 수 없습니다. 편집 가능한 프로젝트를 선택하세요."
     }
   }
 }

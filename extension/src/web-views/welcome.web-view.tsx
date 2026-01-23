@@ -116,7 +116,10 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // Project options state for ComboBox
   const [projectOptions, setProjectOptions] = useState<ProjectOption[]>([]);
 
-  // Fetch available projects on mount (only editable projects, not downloaded resources)
+  // Secret mode: include resources when Ctrl+click on project selector
+  const [includeResources, setIncludeResources] = useState(false);
+
+  // Fetch available projects (only editable projects unless secret mode enabled)
   useEffect(() => {
     let cancelled = false;
 
@@ -132,11 +135,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           allMetadata.map(async (metadata: { id: string }) => {
             try {
               const pdp = await papi.projectDataProviders.get("platform.base", metadata.id);
-              // TEMPORARILY DISABLED: Allow non-editable projects for testing Arabic resources
+
               // Check if project is editable (resources are not editable)
-              // Note: platform.isEditable is project-level, not user-permission-level
-              // const isEditable = await pdp.getSetting("platform.isEditable");
-              // if (!isEditable) return; // Skip resources
+              // Secret mode: Ctrl+click on project selector includes resources
+              if (!includeResources) {
+                const isEditable = await pdp.getSetting("platform.isEditable");
+                if (!isEditable) return; // Skip resources unless secret mode
+              }
 
               const name = await pdp.getSetting("platform.name");
               options.push({
@@ -162,7 +167,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [includeResources]);
 
   // Find selected project option
   const selectedProject = useMemo(() => {
@@ -178,6 +183,17 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       }
     },
     [updateWebViewDefinition]
+  );
+
+  // Handle Ctrl+click on project selector to enable secret resource mode
+  const handleProjectSelectorClick = useCallback(
+    (event: React.MouseEvent) => {
+      if (event.ctrlKey && !includeResources) {
+        event.preventDefault();
+        setIncludeResources(true);
+      }
+    },
+    [includeResources]
   );
 
   // Get project name for display (fallback if ComboBox hasn't loaded)
@@ -649,19 +665,21 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         <div className="tw-flex tw-flex-col sm:tw-flex-row sm:tw-items-start tw-gap-6 tw-mb-6">
           {/* Left Column: Project and Chapter Selection */}
           <div>
-            {/* Project Selection */}
+            {/* Project Selection - Ctrl+click to include resources (secret mode) */}
             <div className="tw-mb-4 tw-flex tw-items-center tw-gap-3">
               <Label className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_paratextProject%"]}</Label>
-              <ComboBox<ProjectOption>
-                options={projectOptions || []}
-                value={selectedProject}
-                onChange={handleProjectChange}
-                getOptionLabel={(option: ProjectOption) => option.label}
-                buttonPlaceholder={localizedStrings["%flexExport_selectProject%"]}
-                textPlaceholder={localizedStrings["%flexExport_searchProjects%"]}
-                commandEmptyMessage={localizedStrings["%flexExport_noProjectsFound%"]}
-                buttonVariant="outline"
-              />
+              <div onMouseDown={handleProjectSelectorClick}>
+                <ComboBox<ProjectOption>
+                  options={projectOptions || []}
+                  value={selectedProject}
+                  onChange={handleProjectChange}
+                  getOptionLabel={(option: ProjectOption) => option.label}
+                  buttonPlaceholder={localizedStrings["%flexExport_selectProject%"]}
+                  textPlaceholder={localizedStrings["%flexExport_searchProjects%"]}
+                  commandEmptyMessage={localizedStrings["%flexExport_noProjectsFound%"]}
+                  buttonVariant="outline"
+                />
+              </div>
             </div>
 
             {/* Scripture Reference Selector */}

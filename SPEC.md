@@ -50,6 +50,9 @@ When someone wants to translate a text using FLExTrans, the first step is to imp
   - Content filter options (enabled by default):
     - Figures (\fig)
   - Preview tabs: Formatted, USFM, and USJ views
+    - Respects project RTL text direction
+    - Uses project's default font and size
+  - UI automatically mirrors for RTL interface languages (Arabic, Hebrew, etc.)
 - Spawn FlexTextBridge CLI and pass scripture data
 - Display success/error feedback to user
 - Persist settings between sessions
@@ -224,6 +227,7 @@ foreach (var para in paragraphs) {
 
 **Deliverables:**
 - [x] Bootstrapped extension (via create-paranext-extension)
+- [x] Menu item "Export Chapter(s) to FLEx..." in Project menu of all WebViews
 - [x] WebView panel showing:
   - Project selector (ComboBox filtering to editable projects)
   - Book/chapter range selector (BookChapterControl + end chapter ComboBox)
@@ -232,12 +236,26 @@ foreach (var para in paragraphs) {
 
 **Implementation Notes:**
 - Uses `platformScripture.USJ_Chapter` to fetch chapters individually
-- Filters projects using `platform.isEditable` setting to exclude downloaded resources
+- Filters projects using `platform.isEditable` setting to exclude downloaded resources (temporarily disabled for testing)
+- When opened from a project WebView, auto-selects that project and current chapter
 - BookChapterControl shows reference with verse (e.g., "Matthew 20:1") - verse cannot be hidden
 - Content filters are all disabled by default (content is excluded unless checked)
 - Introduction filter only available when starting chapter is 1
+- Detects project's `platform.textDirection` for RTL scripture preview
+- Detects `platform.interfaceLanguage` for RTL UI layout
+- Attempts to read project's `DefaultFont` and `DefaultFontSize` for preview styling
 
 **Success Criteria:** Can display any chapter range's content in the WebView with filtering
+
+### Pre-MVP Bonus: Internationalization (COMPLETED)
+**Goal:** Support multiple UI languages
+
+**Deliverables:**
+- [x] All UI strings externalized to localizedStrings.json
+- [x] Localized to 15 languages: English, Spanish, French, Portuguese, German, Indonesian, Russian, Chinese (Simplified & Traditional), Turkish, Vietnamese, Arabic, Hindi, Swahili, Korean
+- [x] RTL UI layout support for Arabic and Hebrew interface languages
+- [x] Project text direction detection for scripture previews
+- [x] Project font and size applied to previews
 
 ### MVP Phase 1: Bridge CLI
 **Goal:** Standalone tool that creates FLEx texts
@@ -246,7 +264,9 @@ foreach (var para in paragraphs) {
 - [ ] C# console app with LibLCM NuGet reference
 - [ ] `--list-projects` command working
 - [ ] `--project --title` with stdin USJ creates text
-- [ ] Proper writing system tagging
+- [ ] USFM output with Proper writing system tagging
+ - Vernacular text must be tagged in FLEx with the default Vernacular Writing System of the Fieldworks project.
+ - Tags, filenames, etc will be tagged in FLEx with the default Analysis Writing System of the Fieldworks Project 
 - [ ] JSON output format
 
 **Success Criteria:** Can run from command line to create a FLEx text
@@ -259,6 +279,7 @@ foreach (var para in paragraphs) {
 - [ ] Project picker dropdown (populated from `--list-projects`)
 - [ ] Book picker (from PAPI)
 - [ ] Export button triggers full flow
+- [ ] If the first 3 letters of Flex's Default Vernacular does NOT match the language code fo the Paratext Project, a warning will be shown allowing the user to abort or continue.  
 - [ ] Success/error toast notifications
 - [ ] Settings persistence
 
@@ -268,9 +289,9 @@ foreach (var para in paragraphs) {
 - "One text per chapter" option (currently exports range as single text)
 - Overwrite confirmation dialog
 - Open FLEx after export
-- Localization (i18n)
 - Linux/macOS support
 - Persist content filter settings between sessions
+- Additional localizations (Amharic, Khmer, Tamil, Telugu, Yoruba, etc.)
 
 ## Prerequisites
 

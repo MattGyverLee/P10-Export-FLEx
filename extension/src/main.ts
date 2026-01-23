@@ -73,7 +73,26 @@ export async function activate(context: ExecutionActivationContext) {
         const webViewDefinition = await papi.webViews.getOpenWebViewDefinition(webViewId);
 
         if (webViewDefinition) {
-          projectId = webViewDefinition.projectId;
+          const sourceProjectId = webViewDefinition.projectId;
+
+          // Only auto-select the project if it's editable (not a resource)
+          if (sourceProjectId) {
+            try {
+              const pdp = await papi.projectDataProviders.get("platform.base", sourceProjectId);
+              const isEditable = await pdp.getSetting("platform.isEditable");
+              if (isEditable) {
+                projectId = sourceProjectId;
+              } else {
+                // Show info notification that resources cannot be exported
+                papi.notifications.send({
+                  message: "%flexExport_resourceNotExportable%",
+                  severity: "info",
+                });
+              }
+            } catch {
+              // If we can't check, don't auto-select the project
+            }
+          }
 
           // Get the scripture reference from the scroll group
           // scrollGroupScrRef can be either a number (scroll group ID) or a SerializedVerseRef
