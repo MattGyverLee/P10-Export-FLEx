@@ -44,7 +44,7 @@ const welcomeWebViewProvider: IWebViewProvider = {
 
     return {
       ...savedWebView,
-      title: "Export Text to FLEx",
+      title: "%flexExport_tabTitle%",
       content: welcomeWebView,
       projectId,
       state: {

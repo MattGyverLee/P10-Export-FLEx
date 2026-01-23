@@ -60,6 +60,9 @@ const isRtlLanguage = (langCode: string | undefined): boolean => {
 // Localization string keys
 const LOCALIZED_STRING_KEYS = [
   "%flexExport_title%",
+  "%flexExport_paratextSettings%",
+  "%flexExport_flexSettings%",
+  "%flexExport_project%",
   "%flexExport_paratextProject%",
   "%flexExport_selectProject%",
   "%flexExport_searchProjects%",
@@ -239,6 +242,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
   // Project options state for ComboBox
   const [projectOptions, setProjectOptions] = useState<ProjectOption[]>([]);
+
+  // Available books in the selected project (from platformScripture.booksPresent)
+  const [availableBookIds, setAvailableBookIds] = useState<string[]>([]);
 
   // Secret mode: include resources when Ctrl+click on project selector
   const [includeResources, setIncludeResources] = useState(false);
@@ -423,6 +429,63 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     };
   }, [includeResources]);
 
+  // Fetch available books when project changes
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchAvailableBooks = async () => {
+      if (!projectId) {
+        setAvailableBookIds([]);
+        return;
+      }
+
+      try {
+        const pdp = await papi.projectDataProviders.get("platform.base", projectId);
+        const booksPresent = await pdp.getSetting("platformScripture.booksPresent") as string;
+
+        if (!cancelled && booksPresent) {
+          // Convert binary string to array of book IDs
+          const bookIds = Array.from(booksPresent).reduce((ids: string[], char, index) => {
+            if (char === "1") {
+              const bookId = Canon.bookNumberToId(index + 1);
+              if (bookId) ids.push(bookId);
+            }
+            return ids;
+          }, []);
+          setAvailableBookIds(bookIds);
+        } else if (!cancelled && !booksPresent) {
+          // No books present data - clear the filter
+          setAvailableBookIds([]);
+        }
+      } catch (err) {
+        console.error("Failed to fetch available books:", err);
+        if (!cancelled) {
+          setAvailableBookIds([]);
+        }
+      }
+    };
+
+    fetchAvailableBooks();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  // Navigate to first available book if current book is not in the project
+  useEffect(() => {
+    if (availableBookIds.length > 0 && !availableBookIds.includes(scrRef.book)) {
+      const firstBook = availableBookIds[0];
+      setScrRef({ book: firstBook, chapterNum: 1, verseNum: 1 });
+      setEndChapter(1);
+    }
+  }, [availableBookIds, scrRef.book]);
+
+  // Callback to get active book IDs for BookChapterControl filtering
+  const getActiveBookIds = useCallback(() => {
+    return availableBookIds;
+  }, [availableBookIds]);
+
   // Find selected project option
   const selectedProject = useMemo(() => {
     if (!projectId || !projectOptions.length) return undefined;
@@ -488,11 +551,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   const [textDirectionSetting] = useProjectSetting(projectId ?? undefined, "platform.textDirection", "");
   const isRtl = textDirectionSetting === "rtl";
 
-  // Get project font settings (using raw Paratext setting names)
+  // Get project font family for preview (but not size - user can zoom the whole window)
   const [projectFont] = useProjectSetting(projectId ?? undefined, "DefaultFont", "");
-  const [projectFontSize] = useProjectSetting(projectId ?? undefined, "DefaultFontSize", "");
   const fontFamily = isPlatformError(projectFont) ? undefined : projectFont || undefined;
-  const fontSize = isPlatformError(projectFontSize) ? undefined : projectFontSize ? `${projectFontSize}pt` : undefined;
 
   // USJ node type interface
   interface UsjNode {
@@ -995,132 +1056,144 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   }, [usjJson, isRtl]);
 
   return (
-    <div className="tw-p-4 tw-min-h-screen tw-bg-background tw-text-foreground" dir={isUiRtl ? "rtl" : "ltr"}>
-      <div className="tw-max-w-4xl tw-mx-auto">
-        <h1 className="tw-text-xl tw-font-bold tw-mb-4 tw-text-foreground">
-          {localizedStrings["%flexExport_title%"]}
-        </h1>
-
-        {/* Settings Row - Project/Chapter on left, Include Options on right */}
-        <div className="tw-flex tw-flex-col sm:tw-flex-row sm:tw-items-start tw-gap-6 tw-mb-6">
-          {/* Left Column: Project and Chapter Selection */}
-          <div>
-            {/* Project Selection - Ctrl+click to include resources (secret mode) */}
-            <div className="tw-mb-4 tw-flex tw-items-center tw-gap-3">
-              <Label className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_paratextProject%"]}</Label>
-              <div onMouseDown={handleProjectSelectorClick}>
-                <ComboBox<ProjectOption>
-                  options={projectOptions || []}
-                  value={selectedProject}
-                  onChange={handleProjectChange}
-                  getOptionLabel={(option: ProjectOption) => option.label}
-                  buttonPlaceholder={localizedStrings["%flexExport_selectProject%"]}
-                  textPlaceholder={localizedStrings["%flexExport_searchProjects%"]}
-                  commandEmptyMessage={localizedStrings["%flexExport_noProjectsFound%"]}
-                  buttonVariant="outline"
-                />
-              </div>
-            </div>
-
-            {/* Scripture Reference Selector */}
-            <div>
-              <Label className="tw-text-sm tw-font-medium tw-mb-2 tw-block tw-text-foreground">
-                {localizedStrings["%flexExport_selectBookChapter%"]}
+    <div id="flex-export-container" className="tw-p-4 tw-min-h-screen tw-bg-background tw-text-foreground" dir={isUiRtl ? "rtl" : "ltr"}>
+      <div id="flex-export-content" className="tw-mx-auto">
+        {/* Settings Row - Three inline boxes that wrap on narrow screens */}
+        <div id="settings-row" className="tw-flex tw-flex-wrap tw-items-start tw-gap-4 tw-mb-8">
+          {/* Paratext Settings Box */}
+          <div id="paratext-settings-box" className="tw-shrink-0 tw-border tw-border-border tw-rounded-md tw-bg-card">
+            <div id="paratext-settings-header" className="tw-p-2.5 tw-ps-4 tw-border-b tw-border-border tw-bg-muted">
+              <Label id="paratext-settings-title" className="tw-text-sm tw-font-medium tw-text-foreground">
+                {localizedStrings["%flexExport_paratextSettings%"]}
               </Label>
-              <div className="tw-flex tw-items-center tw-gap-3 tw-flex-wrap">
-                <BookChapterControl
-                  scrRef={scrRef}
-                  handleSubmit={handleStartRefChange}
-                />
-                <Label className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_toChapter%"]} </Label>
-                <ComboBox<number>
-                  options={endChapterOptions}
-                  value={endChapter}
-                  onChange={(val: number | undefined) => val && setEndChapter(val)}
-                  getOptionLabel={(opt: number) => opt.toString()}
-                  buttonPlaceholder={localizedStrings["%flexExport_endChapter%"]}
-                  buttonClassName="tw-w-24"
-                />
+            </div>
+            <div id="paratext-settings-content" className="tw-px-4 tw-py-3 tw-space-y-3">
+              {/* Project Selection - Ctrl+click to include resources (secret mode) */}
+              <div id="paratext-project-row" className="tw-flex tw-items-center tw-gap-3">
+                <Label id="paratext-project-label" htmlFor="paratext-project-selector" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap">
+                  {localizedStrings["%flexExport_project%"]}
+                </Label>
+                <div id="paratext-project-selector-wrapper" onMouseDown={handleProjectSelectorClick}>
+                  <ComboBox<ProjectOption>
+                    id="paratext-project-selector"
+                    options={projectOptions || []}
+                    value={selectedProject}
+                    onChange={handleProjectChange}
+                    getOptionLabel={(option: ProjectOption) => option.label}
+                    buttonPlaceholder={localizedStrings["%flexExport_selectProject%"]}
+                    textPlaceholder={localizedStrings["%flexExport_searchProjects%"]}
+                    commandEmptyMessage={localizedStrings["%flexExport_noProjectsFound%"]}
+                    buttonVariant="outline"
+                  />
+                </div>
+              </div>
+
+              {/* Scripture Reference Selector */}
+              <div id="scripture-reference-row">
+                <Label id="scripture-reference-label" className="tw-text-sm tw-font-medium tw-mb-2 tw-block tw-text-foreground">
+                  {localizedStrings["%flexExport_selectBookChapter%"]}
+                </Label>
+                <div id="scripture-reference-controls" className="tw-flex tw-items-center tw-gap-3 tw-flex-wrap">
+                  <BookChapterControl
+                    scrRef={scrRef}
+                    handleSubmit={handleStartRefChange}
+                    getActiveBookIds={availableBookIds.length > 0 ? getActiveBookIds : undefined}
+                  />
+                  <Label id="end-chapter-label" htmlFor="end-chapter-selector" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_toChapter%"]} </Label>
+                  <ComboBox<number>
+                    id="end-chapter-selector"
+                    options={endChapterOptions}
+                    value={endChapter}
+                    onChange={(val: number | undefined) => val && setEndChapter(val)}
+                    getOptionLabel={(opt: number) => opt.toString()}
+                    buttonPlaceholder={localizedStrings["%flexExport_endChapter%"]}
+                    buttonClassName="tw-w-24"
+                  />
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Right Column: Content Options */}
-          <div className="tw-shrink-0 tw-border tw-border-border tw-rounded-md tw-bg-card">
-            <div className="tw-p-2.5 tw-border-b tw-border-border tw-bg-muted">
-              <Label className="tw-text-sm tw-font-medium tw-text-foreground">
+          {/* Include in Export Box */}
+          <div id="include-export-box" className="tw-shrink-0 tw-border tw-border-border tw-rounded-md tw-bg-card">
+            <div id="include-export-header" className="tw-p-2.5 tw-ps-4 tw-border-b tw-border-border tw-bg-muted">
+              <Label id="include-export-title" className="tw-text-sm tw-font-medium tw-text-foreground">
                 {localizedStrings["%flexExport_includeInExport%"]}
               </Label>
             </div>
-            <div className="tw-px-4 tw-py-3 tw-flex tw-flex-col tw-gap-1">
-              <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+            <div id="include-export-content" className="tw-px-4 tw-py-3 tw-flex tw-flex-col tw-gap-1">
+              <label id="include-footnotes-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
                 <Checkbox
+                  id="include-footnotes-checkbox"
                   checked={includeFootnotes}
                   onCheckedChange={(checked: boolean | "indeterminate") => setIncludeFootnotes(checked === true)}
                 />
-                <span className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_footnotes%"]}</span>
+                <span id="include-footnotes-label" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_footnotes%"]}</span>
               </label>
-              <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+              <label id="include-crossrefs-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
                 <Checkbox
+                  id="include-crossrefs-checkbox"
                   checked={includeCrossRefs}
                   onCheckedChange={(checked: boolean | "indeterminate") => setIncludeCrossRefs(checked === true)}
                 />
-                <span className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_crossReferences%"]}</span>
+                <span id="include-crossrefs-label" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_crossReferences%"]}</span>
               </label>
-              <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+              <label id="include-intro-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
                 <Checkbox
+                  id="include-intro-checkbox"
                   checked={includeIntro}
                   onCheckedChange={(checked: boolean | "indeterminate") => setIncludeIntro(checked === true)}
                   disabled={scrRef.chapterNum !== 1}
                 />
-                <span className={`tw-text-sm ${scrRef.chapterNum !== 1 ? "tw-text-muted-foreground" : "tw-text-foreground"}`}>
+                <span id="include-intro-label" className={`tw-text-sm ${scrRef.chapterNum !== 1 ? "tw-text-muted-foreground" : "tw-text-foreground"}`}>
                   {localizedStrings["%flexExport_introduction%"]}
                 </span>
               </label>
-              <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+              <label id="include-remarks-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
                 <Checkbox
+                  id="include-remarks-checkbox"
                   checked={includeRemarks}
                   onCheckedChange={(checked: boolean | "indeterminate") => setIncludeRemarks(checked === true)}
                 />
-                <span className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_remarks%"]}</span>
+                <span id="include-remarks-label" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_remarks%"]}</span>
               </label>
-              <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+              <label id="include-figures-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
                 <Checkbox
+                  id="include-figures-checkbox"
                   checked={includeFigures}
                   onCheckedChange={(checked: boolean | "indeterminate") => setIncludeFigures(checked === true)}
                 />
-                <span className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_figures%"]}</span>
+                <span id="include-figures-label" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_figures%"]}</span>
               </label>
             </div>
           </div>
-        </div>
 
-        {/* FLEx Export Settings */}
-        <div className="tw-mb-6 tw-p-4 tw-border tw-border-border tw-rounded-md tw-bg-card">
-          <Label className="tw-text-sm tw-font-medium tw-mb-3 tw-block tw-text-foreground">
-            {localizedStrings["%flexExport_title%"]}
-          </Label>
-
-          {/* Error message when FLEx is not available */}
-          {flexLoadError && (
-            <div className="tw-p-3 tw-bg-red-50 tw-border tw-border-red-200 tw-rounded-md dark:tw-bg-red-900/20 dark:tw-border-red-700 tw-mb-4">
-              <p className="tw-text-sm tw-text-red-800 dark:tw-text-red-200">
-                {flexLoadError === "no_projects"
-                  ? localizedStrings["%flexExport_flexNotFound%"]
-                  : (localizedStrings["%flexExport_flexLoadError%"] || "").replace("{error}", flexLoadError)}
-              </p>
+          {/* FLEx Settings Box */}
+          <div id="flex-settings-box" className="tw-shrink-0 tw-border tw-border-border tw-rounded-md tw-bg-card tw-mb-4">
+            <div id="flex-settings-header" className="tw-p-2.5 tw-ps-4 tw-border-b tw-border-border tw-bg-muted">
+              <Label id="flex-settings-title" className="tw-text-sm tw-font-medium tw-text-foreground">
+                {localizedStrings["%flexExport_flexSettings%"]}
+              </Label>
             </div>
-          )}
+            <div id="flex-settings-content" className="tw-px-4 tw-py-3 tw-space-y-3">
+              {/* Error message when FLEx is not available */}
+              {flexLoadError && (
+                <div id="flex-error-message" className="tw-p-2 tw-bg-red-50 tw-border tw-border-red-200 tw-rounded-md dark:tw-bg-red-900/20 dark:tw-border-red-700">
+                  <p className="tw-text-xs tw-text-red-800 dark:tw-text-red-200">
+                    {flexLoadError === "no_projects"
+                      ? localizedStrings["%flexExport_flexNotFound%"]
+                      : (localizedStrings["%flexExport_flexLoadError%"] || "").replace("{error}", flexLoadError)}
+                  </p>
+                </div>
+              )}
 
-          <div className="tw-grid tw-grid-cols-1 md:tw-grid-cols-2 tw-gap-4">
-            {/* Left: FLEx Project and Writing System */}
-            <div className="tw-space-y-3">
               {/* FLEx Project Selector */}
-              <div className="tw-flex tw-items-center tw-gap-3">
-                <Label className="tw-text-sm tw-text-foreground tw-whitespace-nowrap">
-                  {localizedStrings["%flexExport_flexProject%"]}
+              <div id="flex-project-row" className="tw-flex tw-items-center tw-gap-3">
+                <Label id="flex-project-label" htmlFor="flex-project-selector" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap">
+                  {localizedStrings["%flexExport_project%"]}
                 </Label>
                 <ComboBox<FlexProjectOption>
+                  id="flex-project-selector"
                   options={flexProjects}
                   value={selectedFlexProject}
                   onChange={handleFlexProjectChange}
@@ -1139,11 +1212,12 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
               {/* Writing System Selector */}
               {flexProjectDetails && writingSystemOptions.length > 0 && (
-                <div className="tw-flex tw-items-center tw-gap-3">
-                  <Label className="tw-text-sm tw-text-foreground tw-whitespace-nowrap">
+                <div id="writing-system-row" className="tw-flex tw-items-center tw-gap-3">
+                  <Label id="writing-system-label" htmlFor="writing-system-selector" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap">
                     {localizedStrings["%flexExport_writingSystem%"]}
                   </Label>
                   <ComboBox<WritingSystemOption>
+                    id="writing-system-selector"
                     options={writingSystemOptions}
                     value={selectedWritingSystem}
                     onChange={handleWritingSystemChange}
@@ -1152,16 +1226,14 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                   />
                 </div>
               )}
-            </div>
 
-            {/* Right: Text Name and Overwrite */}
-            <div className="tw-space-y-3">
               {/* Text Name Field */}
-              <div className="tw-flex tw-items-center tw-gap-3">
-                <Label className="tw-text-sm tw-text-foreground tw-whitespace-nowrap">
+              <div id="text-name-row" className="tw-flex tw-items-center tw-gap-3">
+                <Label id="text-name-label" htmlFor="text-name-input" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap">
                   {localizedStrings["%flexExport_textName%"]}
                 </Label>
                 <Input
+                  id="text-name-input"
                   value={textName}
                   onChange={(e) => setTextName(e.target.value)}
                   placeholder={localizedStrings["%flexExport_textNamePlaceholder%"]}
@@ -1170,97 +1242,100 @@ globalThis.webViewComponent = function ExportToFlexWebView({
               </div>
 
               {/* Overwrite Toggle */}
-              <div className="tw-flex tw-items-center tw-gap-3">
+              <div id="overwrite-row" className="tw-flex tw-items-center tw-gap-3">
                 <Switch
+                  id="overwrite-toggle"
                   checked={overwriteEnabled}
                   onCheckedChange={setOverwriteEnabled}
                 />
-                <Label className="tw-text-sm tw-text-foreground">
+                <Label htmlFor="overwrite-toggle" className="tw-text-sm tw-text-foreground tw-cursor-pointer">
                   {localizedStrings["%flexExport_overwrite%"]}
                 </Label>
               </div>
-            </div>
-          </div>
 
-          {/* Export Button and Status */}
-          <div className="tw-mt-4 tw-flex tw-items-center tw-gap-4">
-            <Button
-              onClick={handleExport}
-              disabled={!selectedFlexProject || !textName || !chaptersUSJ.length || isExporting}
-            >
-              {isExporting
-                ? localizedStrings["%flexExport_exporting%"]
-                : localizedStrings["%flexExport_export%"]}
-            </Button>
-
-            {exportStatus && (
-              <span className={`tw-text-sm ${exportStatus.success ? "tw-text-green-600" : "tw-text-red-600"}`}>
-                {exportStatus.message}
-              </span>
-            )}
-          </div>
-
-          {/* Overwrite Confirmation Dialog */}
-          {showOverwriteConfirm && (
-            <div className="tw-mt-4 tw-p-3 tw-bg-amber-50 tw-border tw-border-amber-200 tw-rounded-md dark:tw-bg-amber-900/20 dark:tw-border-amber-700">
-              <p className="tw-text-sm tw-text-amber-800 dark:tw-text-amber-200 tw-mb-2">
-                {(localizedStrings["%flexExport_overwriteConfirmMessage%"] || "")
-                  .replace("{textName}", textName)}
-              </p>
-              <div className="tw-flex tw-gap-2">
-                <Button size="sm" variant="destructive" onClick={handleExport}>
-                  {localizedStrings["%flexExport_overwriteConfirmYes%"]}
+              {/* Export Button and Status */}
+              <div id="export-button-row" className="tw-flex tw-items-center tw-gap-3 tw-pt-1">
+                <Button
+                  id="export-button"
+                  onClick={handleExport}
+                  disabled={!selectedFlexProject || !textName || !chaptersUSJ.length || isExporting}
+                >
+                  {isExporting
+                    ? localizedStrings["%flexExport_exporting%"]
+                    : localizedStrings["%flexExport_export%"]}
                 </Button>
-                <Button size="sm" variant="outline" onClick={handleCancelOverwrite}>
-                  {localizedStrings["%flexExport_overwriteConfirmNo%"]}
-                </Button>
+
+                {exportStatus && (
+                  <span id="export-status-message" className={`tw-text-sm ${exportStatus.success ? "tw-text-green-600" : "tw-text-red-600"}`}>
+                    {exportStatus.message}
+                  </span>
+                )}
               </div>
-            </div>
-          )}
-        </div>
 
-        {/* Preview Toggle */}
-        <div className="tw-mb-2 tw-flex tw-gap-2">
-          <Button
-            variant={viewMode === "formatted" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setViewMode("formatted")}
-          >
-            {localizedStrings["%flexExport_formatted%"]}
-          </Button>
-          <Button
-            variant={viewMode === "usfm" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setViewMode("usfm")}
-          >
-            {localizedStrings["%flexExport_usfm%"]}
-          </Button>
-          <Button
-            variant={viewMode === "usj" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setViewMode("usj")}
-          >
-            {localizedStrings["%flexExport_usjData%"]}
-          </Button>
+              {/* Overwrite Confirmation Dialog */}
+              {showOverwriteConfirm && (
+                <div id="overwrite-confirm-dialog" className="tw-p-2 tw-bg-amber-50 tw-border tw-border-amber-200 tw-rounded-md dark:tw-bg-amber-900/20 dark:tw-border-amber-700">
+                  <p id="overwrite-confirm-message" className="tw-text-xs tw-text-amber-800 dark:tw-text-amber-200 tw-mb-2">
+                    {(localizedStrings["%flexExport_overwriteConfirmMessage%"] || "")
+                      .replace("{textName}", textName)}
+                  </p>
+                  <div id="overwrite-confirm-buttons" className="tw-flex tw-gap-2">
+                    <Button id="overwrite-confirm-yes" size="sm" variant="destructive" onClick={handleExport}>
+                      {localizedStrings["%flexExport_overwriteConfirmYes%"]}
+                    </Button>
+                    <Button id="overwrite-confirm-no" size="sm" variant="outline" onClick={handleCancelOverwrite}>
+                      {localizedStrings["%flexExport_overwriteConfirmNo%"]}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Scripture Preview */}
-        <div className="tw-border tw-border-border tw-rounded-md tw-bg-card">
-          <div className="tw-p-3 tw-border-b tw-border-border tw-bg-muted">
-            <Label className="tw-text-sm tw-font-medium tw-text-foreground">
+        <div id="scripture-preview-box" className="tw-mt-4 tw-border tw-border-border tw-rounded-md tw-bg-card">
+          <div id="scripture-preview-header" className="tw-p-3 tw-ps-4 tw-border-b tw-border-border tw-bg-muted tw-flex tw-justify-between tw-items-center tw-flex-wrap tw-gap-2">
+            <Label id="scripture-preview-title" className="tw-text-sm tw-font-medium tw-text-foreground">
               {viewMode === "formatted" && localizedStrings["%flexExport_scripturePreview%"]}
               {viewMode === "usfm" && localizedStrings["%flexExport_usfmPreview%"]}
               {viewMode === "usj" && localizedStrings["%flexExport_usjJsonData%"]}
             </Label>
+            <div id="view-mode-buttons" className="tw-flex tw-gap-2">
+              <Button
+                id="view-mode-formatted"
+                variant={viewMode === "formatted" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setViewMode("formatted")}
+              >
+                {localizedStrings["%flexExport_formatted%"]}
+              </Button>
+              <Button
+                id="view-mode-usfm"
+                variant={viewMode === "usfm" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setViewMode("usfm")}
+              >
+                {localizedStrings["%flexExport_usfm%"]}
+              </Button>
+              <Button
+                id="view-mode-usj"
+                variant={viewMode === "usj" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setViewMode("usj")}
+              >
+                {localizedStrings["%flexExport_usjData%"]}
+              </Button>
+            </div>
           </div>
-          <div className="tw-p-4 tw-min-h-64 tw-max-h-96 tw-overflow-auto">
+          <div id="scripture-preview-content" className="tw-p-4 tw-min-h-64 tw-max-h-96 tw-overflow-auto">
             {viewMode === "formatted" && (
               <div
+                id="preview-formatted"
                 className="tw-leading-relaxed tw-text-foreground"
                 dir={isRtl ? "rtl" : "ltr"}
                 style={{
                   fontFamily: fontFamily || undefined,
-                  fontSize: fontSize || undefined,
                 }}
               >
                 {formattedPreview}
@@ -1268,6 +1343,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             )}
             {viewMode === "usfm" && (
               <pre
+                id="preview-usfm"
                 className="tw-text-foreground"
                 dir={isRtl ? "rtl" : "ltr"}
                 style={{
@@ -1276,14 +1352,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                   overflowWrap: "break-word",
                   textAlign: isRtl ? "right" : "left",
                   fontFamily: fontFamily || "monospace",
-                  fontSize: fontSize || undefined,
                 }}
               >
                 {usfmText}
               </pre>
             )}
             {viewMode === "usj" && (
-              <pre className="tw-text-xs tw-font-mono tw-whitespace-pre-wrap tw-text-foreground">
+              <pre id="preview-usj" className="tw-text-xs tw-font-mono tw-whitespace-pre-wrap tw-text-foreground">
                 {renderUsjWithDirection || localizedStrings["%flexExport_noUsjData%"]}
               </pre>
             )}
@@ -1291,10 +1366,10 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         </div>
 
         {/* Status */}
-        <div className="tw-mt-4 tw-text-xs tw-text-muted-foreground">
+        <div id="loading-status" className="tw-mt-4 tw-text-xs tw-text-muted-foreground">
           {isLoading && localizedStrings["%flexExport_loadingScripture%"]}
           {!isLoading && chaptersUSJ.length > 0 && (
-            <span>
+            <span id="loaded-chapters-status">
               {scrRef.chapterNum === endChapter
                 ? localizedStrings["%flexExport_loadedChapter%"]
                     ?.replace("{book}", scrRef.book)
