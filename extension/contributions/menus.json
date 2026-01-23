@@ -9,8 +9,8 @@
     "groups": {},
     "items": [
       {
-        "label": "%mainMenu_exportToFlex%",
-        "localizeNotes": "Web view main menu > Project > Export Text to FLEx",
+        "label": "%flexExport_menuItem%",
+        "localizeNotes": "Web view main menu > Project > Export Chapter(s) to FLEx",
         "group": "platform.projectTop",
         "order": 10,
         "command": "flexExport.openExportDialog"

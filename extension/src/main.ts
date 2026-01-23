@@ -61,7 +61,7 @@ export async function activate(context: ExecutionActivationContext) {
   );
 
   // Register command to open the export dialog
-  // When invoked from a WebView menu, webViewId is passed automatically
+  // When invoked from a WebView menu, webViewId is passed automatically as the first argument
   const openExportDialogPromise = papi.commands.registerCommand(
     "flexExport.openExportDialog",
     async (webViewId?: string) => {
@@ -71,12 +71,23 @@ export async function activate(context: ExecutionActivationContext) {
       // If invoked from a WebView, get the project and current scripture reference
       if (webViewId) {
         const webViewDefinition = await papi.webViews.getOpenWebViewDefinition(webViewId);
+
         if (webViewDefinition) {
           projectId = webViewDefinition.projectId;
+
           // Get the scripture reference from the scroll group
+          // scrollGroupScrRef can be either a number (scroll group ID) or a SerializedVerseRef
           const scrollGroupScrRef = webViewDefinition.scrollGroupScrRef;
-          if (scrollGroupScrRef && typeof scrollGroupScrRef === 'object' && 'scrRef' in scrollGroupScrRef) {
-            initialScrRef = scrollGroupScrRef.scrRef as SerializedVerseRef;
+
+          if (typeof scrollGroupScrRef === 'number') {
+            // It's a scroll group ID - look up the scripture reference
+            initialScrRef = await papi.scrollGroups.getScrRef(scrollGroupScrRef);
+          } else if (typeof scrollGroupScrRef === 'object' && scrollGroupScrRef && 'book' in scrollGroupScrRef) {
+            // It's a SerializedVerseRef directly
+            initialScrRef = scrollGroupScrRef as SerializedVerseRef;
+          } else {
+            // Default to scroll group 0 if no scroll group is defined
+            initialScrRef = await papi.scrollGroups.getScrRef(0);
           }
         }
       }

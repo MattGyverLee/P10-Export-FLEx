@@ -1,7 +1,7 @@
 import { WebViewProps } from "@papi/core";
 import papi from "@papi/frontend";
-import { useProjectSetting } from "@papi/frontend/react";
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useLocalizedStrings, useProjectSetting, useSetting } from "@papi/frontend/react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { BookChapterControl, Button, Checkbox, ComboBox, Label } from "platform-bible-react";
 import { isPlatformError, getChaptersForBook } from "platform-bible-utils";
 import { Canon, SerializedVerseRef } from "@sillsdev/scripture";
@@ -15,31 +15,70 @@ type ProjectOption = {
 // Default scripture reference
 const DEFAULT_SCR_REF: SerializedVerseRef = { book: "GEN", chapterNum: 1, verseNum: 1 };
 
+// RTL language codes (primary language codes that use right-to-left scripts)
+const RTL_LANGUAGES = ["ar", "he", "fa", "ps", "ur", "yi", "ku", "sd", "ug"];
+
+// Helper to check if a language code is RTL
+const isRtlLanguage = (langCode: string | undefined): boolean => {
+  if (!langCode) return false;
+  const baseCode = langCode.split("-")[0].toLowerCase();
+  return RTL_LANGUAGES.includes(baseCode);
+};
+
+// Localization string keys
+const LOCALIZED_STRING_KEYS = [
+  "%flexExport_title%",
+  "%flexExport_paratextProject%",
+  "%flexExport_selectProject%",
+  "%flexExport_searchProjects%",
+  "%flexExport_noProjectsFound%",
+  "%flexExport_noProjectSelected%",
+  "%flexExport_selectBookChapter%",
+  "%flexExport_toChapter%",
+  "%flexExport_endChapter%",
+  "%flexExport_includeInExport%",
+  "%flexExport_footnotes%",
+  "%flexExport_crossReferences%",
+  "%flexExport_introduction%",
+  "%flexExport_remarks%",
+  "%flexExport_figures%",
+  "%flexExport_formatted%",
+  "%flexExport_usfm%",
+  "%flexExport_usjData%",
+  "%flexExport_scripturePreview%",
+  "%flexExport_usfmPreview%",
+  "%flexExport_usjJsonData%",
+  "%flexExport_loading%",
+  "%flexExport_noScriptureData%",
+  "%flexExport_noUsjData%",
+  "%flexExport_loadingScripture%",
+  "%flexExport_chapter%",
+  "%flexExport_remark%",
+  "%flexExport_figure%",
+  "%flexExport_footnote%",
+];
+
 globalThis.webViewComponent = function ExportToFlexWebView({
   projectId,
   updateWebViewDefinition,
-  useWebViewState,
+  state,
 }: WebViewProps) {
-  // Get initial scripture reference from WebView state (set when opened from a project)
-  const [initialScrRef] = useWebViewState<SerializedVerseRef | undefined>('initialScrRef', undefined);
+  // Localized strings
+  const [localizedStrings] = useLocalizedStrings(LOCALIZED_STRING_KEYS);
 
-  // Track if we've applied the initial state
-  const initializedRef = useRef(false);
+  // Get UI locale direction for RTL interface support
+  const [interfaceLanguages] = useSetting("platform.interfaceLanguage", ["en"]);
+  const uiLanguage = Array.isArray(interfaceLanguages) ? interfaceLanguages[0] : "en";
+  const isUiRtl = isRtlLanguage(uiLanguage);
 
-  // Scripture reference state with setter for BookChapterControl
+  // Get initial scripture reference from state (captured when dialog was opened)
+  const initialScrRef = state?.initialScrRef as SerializedVerseRef | undefined;
+
+  // Scripture reference state - initialized from the captured reference
   const [scrRef, setScrRef] = useState<SerializedVerseRef>(initialScrRef || DEFAULT_SCR_REF);
 
   // End chapter for range selection (defaults to start chapter)
   const [endChapter, setEndChapter] = useState(initialScrRef?.chapterNum || 1);
-
-  // Apply initial scripture reference once when it becomes available
-  useEffect(() => {
-    if (initialScrRef && !initializedRef.current) {
-      initializedRef.current = true;
-      setScrRef(initialScrRef);
-      setEndChapter(initialScrRef.chapterNum);
-    }
-  }, [initialScrRef]);
 
   // Content filter toggles (all disabled by default, except figures)
   const [includeFootnotes, setIncludeFootnotes] = useState(false);
@@ -93,10 +132,11 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           allMetadata.map(async (metadata: { id: string }) => {
             try {
               const pdp = await papi.projectDataProviders.get("platform.base", metadata.id);
+              // TEMPORARILY DISABLED: Allow non-editable projects for testing Arabic resources
               // Check if project is editable (resources are not editable)
               // Note: platform.isEditable is project-level, not user-permission-level
-              const isEditable = await pdp.getSetting("platform.isEditable");
-              if (!isEditable) return; // Skip resources
+              // const isEditable = await pdp.getSetting("platform.isEditable");
+              // if (!isEditable) return; // Skip resources
 
               const name = await pdp.getSetting("platform.name");
               options.push({
@@ -142,12 +182,23 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
   // Get project name for display (fallback if ComboBox hasn't loaded)
   const [projectNameSetting] = useProjectSetting(projectId ?? undefined, "platform.name", "");
+
+  // Get text direction setting for RTL support
+  const [textDirectionSetting] = useProjectSetting(projectId ?? undefined, "platform.textDirection", "");
+  const isRtl = textDirectionSetting === "rtl";
+
+  // Get project font settings (using raw Paratext setting names)
+  const [projectFont] = useProjectSetting(projectId ?? undefined, "DefaultFont", "");
+  const [projectFontSize] = useProjectSetting(projectId ?? undefined, "DefaultFontSize", "");
+  const fontFamily = isPlatformError(projectFont) ? undefined : projectFont || undefined;
+  const fontSize = isPlatformError(projectFontSize) ? undefined : projectFontSize ? `${projectFontSize}pt` : undefined;
+
   const displayProjectName = useMemo(() => {
-    if (!projectId) return "No project selected";
+    if (!projectId) return localizedStrings["%flexExport_noProjectSelected%"];
     if (selectedProject) return selectedProject.label;
     if (isPlatformError(projectNameSetting)) return projectId;
     return projectNameSetting || projectId;
-  }, [projectId, selectedProject, projectNameSetting]);
+  }, [projectId, selectedProject, projectNameSetting, localizedStrings]);
 
   // USJ node type interface
   interface UsjNode {
@@ -244,8 +295,8 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
   // Convert USJ to USFM text
   const usfmText = useMemo(() => {
-    if (isLoading) return "Loading...";
-    if (!chaptersUSJ.length) return "No scripture data available. Select a project.";
+    if (isLoading) return localizedStrings["%flexExport_loading%"];
+    if (!chaptersUSJ.length) return localizedStrings["%flexExport_noScriptureData%"];
 
     const convertToUsfm = (content: (UsjNode | string)[], isFirstChapter: boolean): string => {
       return content
@@ -317,12 +368,12 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         return "";
       })
       .join("\n");
-  }, [chaptersUSJ, isLoading, includeFootnotes, includeCrossRefs, includeIntro, includeRemarks, includeFigures, scrRef.chapterNum]);
+  }, [chaptersUSJ, isLoading, includeFootnotes, includeCrossRefs, includeIntro, includeRemarks, includeFigures, scrRef.chapterNum, localizedStrings]);
 
   // Convert USJ to formatted HTML-like preview
   const formattedPreview = useMemo(() => {
-    if (isLoading) return <div>Loading...</div>;
-    if (!chaptersUSJ.length) return <div>No scripture data available. Select a project.</div>;
+    if (isLoading) return <div>{localizedStrings["%flexExport_loading%"]}</div>;
+    if (!chaptersUSJ.length) return <div>{localizedStrings["%flexExport_noScriptureData%"]}</div>;
 
     const renderContent = (content: (UsjNode | string)[], key = "", isFirstChapter = false): React.ReactNode[] => {
       return content.map((item, idx) => {
@@ -334,7 +385,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         if (node.type === "chapter" && node.number) {
           return (
             <div key={itemKey} className="tw-text-lg tw-font-bold tw-mb-3 tw-text-foreground">
-              Chapter {node.number}
+              {localizedStrings["%flexExport_chapter%"]} {node.number}
             </div>
           );
         }
@@ -393,7 +444,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           if (isRemark) {
             return (
               <p key={itemKey} className="tw-mb-2 tw-text-sm tw-text-muted-foreground tw-bg-muted tw-p-1 tw-rounded">
-                [Remark: {node.content && renderContent(node.content, itemKey, isFirstChapter)}]
+                [{localizedStrings["%flexExport_remark%"]} {node.content && renderContent(node.content, itemKey, isFirstChapter)}]
               </p>
             );
           }
@@ -419,7 +470,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           if (isFigure) {
             return (
               <span key={itemKey} className="tw-text-sm tw-text-muted-foreground tw-bg-muted tw-p-1 tw-rounded">
-                [Figure: {node.content && renderContent(node.content, itemKey, isFirstChapter)}]
+                [{localizedStrings["%flexExport_figure%"]} {node.content && renderContent(node.content, itemKey, isFirstChapter)}]
               </span>
             );
           }
@@ -439,7 +490,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             return null;
           }
           return (
-            <sup key={itemKey} className="tw-text-xs tw-text-muted-foreground tw-cursor-help" title="Footnote">
+            <sup key={itemKey} className="tw-text-xs tw-text-muted-foreground tw-cursor-help" title={localizedStrings["%flexExport_footnote%"]}>
               [{node.caller || "*"}]
             </sup>
           );
@@ -464,7 +515,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         })}
       </div>
     );
-  }, [chaptersUSJ, isLoading, includeFootnotes, includeCrossRefs, includeIntro, includeRemarks, includeFigures, scrRef.chapterNum]);
+  }, [chaptersUSJ, isLoading, includeFootnotes, includeCrossRefs, includeIntro, includeRemarks, includeFigures, scrRef.chapterNum, localizedStrings]);
 
   // Filter USJ content based on toggles
   const filterUsjContent = useCallback(
@@ -535,28 +586,80 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     return JSON.stringify(filteredChapters, null, 2);
   }, [chaptersUSJ, filterUsjContent, scrRef.chapterNum]);
 
+  // Render USJ JSON with RTL-aware string values
+  const renderUsjWithDirection = useMemo(() => {
+    if (!usjJson) return null;
+
+    // If not RTL, just return plain text
+    if (!isRtl) {
+      return <span>{usjJson}</span>;
+    }
+
+    // For RTL, we need to render string values with RTL direction
+    // Split by quoted strings and render them with appropriate direction
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    // Match JSON string values (content after a colon or in arrays)
+    const stringRegex = /("(?:[^"\\]|\\.)*")/g;
+    let match;
+    let partIndex = 0;
+
+    while ((match = stringRegex.exec(usjJson)) !== null) {
+      // Add text before the match
+      if (match.index > lastIndex) {
+        parts.push(<span key={`text-${partIndex++}`}>{usjJson.slice(lastIndex, match.index)}</span>);
+      }
+
+      const stringValue = match[1];
+      // Check if this is a property name (followed by colon) or a value
+      const afterMatch = usjJson.slice(match.index + stringValue.length).trimStart();
+      const isPropertyName = afterMatch.startsWith(":");
+
+      if (isPropertyName) {
+        // Property names stay LTR
+        parts.push(<span key={`prop-${partIndex++}`}>{stringValue}</span>);
+      } else {
+        // String values get RTL direction (but keep quotes LTR)
+        const innerContent = stringValue.slice(1, -1); // Remove quotes
+        parts.push(
+          <span key={`val-${partIndex++}`}>
+            "<span dir="rtl" style={{ unicodeBidi: "embed" }}>{innerContent}</span>"
+          </span>
+        );
+      }
+      lastIndex = match.index + stringValue.length;
+    }
+
+    // Add remaining text
+    if (lastIndex < usjJson.length) {
+      parts.push(<span key={`end-${partIndex}`}>{usjJson.slice(lastIndex)}</span>);
+    }
+
+    return <>{parts}</>;
+  }, [usjJson, isRtl]);
+
   return (
-    <div className="tw-p-4 tw-min-h-screen tw-bg-background tw-text-foreground">
+    <div className="tw-p-4 tw-min-h-screen tw-bg-background tw-text-foreground" dir={isUiRtl ? "rtl" : "ltr"}>
       <div className="tw-max-w-4xl tw-mx-auto">
         <h1 className="tw-text-xl tw-font-bold tw-mb-4 tw-text-foreground">
-          Export to FLEx
+          {localizedStrings["%flexExport_title%"]}
         </h1>
 
         {/* Settings Row - Project/Chapter on left, Include Options on right */}
-        <div className="tw-flex tw-flex-col sm:tw-flex-row sm:tw-items-start tw-gap-6 tw-mb-4">
+        <div className="tw-flex tw-flex-col sm:tw-flex-row sm:tw-items-start tw-gap-6 tw-mb-6">
           {/* Left Column: Project and Chapter Selection */}
           <div>
             {/* Project Selection */}
             <div className="tw-mb-4 tw-flex tw-items-center tw-gap-3">
-              <Label className="tw-text-sm tw-text-foreground">Paratext Project:</Label>
+              <Label className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_paratextProject%"]}</Label>
               <ComboBox<ProjectOption>
                 options={projectOptions || []}
                 value={selectedProject}
                 onChange={handleProjectChange}
                 getOptionLabel={(option: ProjectOption) => option.label}
-                buttonPlaceholder="Select a project"
-                textPlaceholder="Search projects..."
-                commandEmptyMessage="No projects found"
+                buttonPlaceholder={localizedStrings["%flexExport_selectProject%"]}
+                textPlaceholder={localizedStrings["%flexExport_searchProjects%"]}
+                commandEmptyMessage={localizedStrings["%flexExport_noProjectsFound%"]}
                 buttonVariant="outline"
               />
             </div>
@@ -564,20 +667,20 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             {/* Scripture Reference Selector */}
             <div>
               <Label className="tw-text-sm tw-font-medium tw-mb-2 tw-block tw-text-foreground">
-                Select Book and Chapter Range:
+                {localizedStrings["%flexExport_selectBookChapter%"]}
               </Label>
               <div className="tw-flex tw-items-center tw-gap-3 tw-flex-wrap">
                 <BookChapterControl
                   scrRef={scrRef}
                   handleSubmit={handleStartRefChange}
                 />
-                <Label className="tw-text-sm tw-text-foreground">to chapter </Label>
+                <Label className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_toChapter%"]} </Label>
                 <ComboBox<number>
                   options={endChapterOptions}
                   value={endChapter}
                   onChange={(val: number | undefined) => val && setEndChapter(val)}
                   getOptionLabel={(opt: number) => opt.toString()}
-                  buttonPlaceholder="End"
+                  buttonPlaceholder={localizedStrings["%flexExport_endChapter%"]}
                   buttonClassName="tw-w-24"
                 />
               </div>
@@ -588,23 +691,23 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           <div className="tw-shrink-0 tw-border tw-border-border tw-rounded-md tw-bg-card">
             <div className="tw-p-2.5 tw-border-b tw-border-border tw-bg-muted">
               <Label className="tw-text-sm tw-font-medium tw-text-foreground">
-                Include in Export:
+                {localizedStrings["%flexExport_includeInExport%"]}
               </Label>
             </div>
-            <div className="tw-p-2.5 tw-flex tw-flex-col tw-gap-2">
+            <div className="tw-px-4 tw-py-3 tw-flex tw-flex-col tw-gap-1">
               <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
                 <Checkbox
                   checked={includeFootnotes}
                   onCheckedChange={(checked: boolean | "indeterminate") => setIncludeFootnotes(checked === true)}
                 />
-                <span className="tw-text-sm tw-text-foreground">Footnotes</span>
+                <span className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_footnotes%"]}</span>
               </label>
               <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
                 <Checkbox
                   checked={includeCrossRefs}
                   onCheckedChange={(checked: boolean | "indeterminate") => setIncludeCrossRefs(checked === true)}
                 />
-                <span className="tw-text-sm tw-text-foreground">Cross References (\x and \r)</span>
+                <span className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_crossReferences%"]}</span>
               </label>
               <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
                 <Checkbox
@@ -613,7 +716,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                   disabled={scrRef.chapterNum !== 1}
                 />
                 <span className={`tw-text-sm ${scrRef.chapterNum !== 1 ? "tw-text-muted-foreground" : "tw-text-foreground"}`}>
-                  Introduction (for chapter 1)
+                  {localizedStrings["%flexExport_introduction%"]}
                 </span>
               </label>
               <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
@@ -621,14 +724,14 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                   checked={includeRemarks}
                   onCheckedChange={(checked: boolean | "indeterminate") => setIncludeRemarks(checked === true)}
                 />
-                <span className="tw-text-sm tw-text-foreground">Remarks (\rem)</span>
+                <span className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_remarks%"]}</span>
               </label>
               <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
                 <Checkbox
                   checked={includeFigures}
                   onCheckedChange={(checked: boolean | "indeterminate") => setIncludeFigures(checked === true)}
                 />
-                <span className="tw-text-sm tw-text-foreground">Figures/Images (\fig)</span>
+                <span className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_figures%"]}</span>
               </label>
             </div>
           </div>
@@ -641,21 +744,21 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             size="sm"
             onClick={() => setViewMode("formatted")}
           >
-            Formatted
+            {localizedStrings["%flexExport_formatted%"]}
           </Button>
           <Button
             variant={viewMode === "usfm" ? "default" : "outline"}
             size="sm"
             onClick={() => setViewMode("usfm")}
           >
-            USFM
+            {localizedStrings["%flexExport_usfm%"]}
           </Button>
           <Button
             variant={viewMode === "usj" ? "default" : "outline"}
             size="sm"
             onClick={() => setViewMode("usj")}
           >
-            USJ Data
+            {localizedStrings["%flexExport_usjData%"]}
           </Button>
         </div>
 
@@ -663,24 +766,35 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         <div className="tw-border tw-border-border tw-rounded-md tw-bg-card">
           <div className="tw-p-3 tw-border-b tw-border-border tw-bg-muted">
             <Label className="tw-text-sm tw-font-medium tw-text-foreground">
-              {viewMode === "formatted" && "Scripture Preview"}
-              {viewMode === "usfm" && "USFM Preview"}
-              {viewMode === "usj" && "USJ JSON Data"}
+              {viewMode === "formatted" && localizedStrings["%flexExport_scripturePreview%"]}
+              {viewMode === "usfm" && localizedStrings["%flexExport_usfmPreview%"]}
+              {viewMode === "usj" && localizedStrings["%flexExport_usjJsonData%"]}
             </Label>
           </div>
           <div className="tw-p-4 tw-min-h-64 tw-max-h-96 tw-overflow-auto">
             {viewMode === "formatted" && (
-              <div className="tw-text-sm tw-leading-relaxed tw-text-foreground">
+              <div
+                className="tw-leading-relaxed tw-text-foreground"
+                dir={isRtl ? "rtl" : "ltr"}
+                style={{
+                  fontFamily: fontFamily || undefined,
+                  fontSize: fontSize || undefined,
+                }}
+              >
                 {formattedPreview}
               </div>
             )}
             {viewMode === "usfm" && (
               <pre
-                className="tw-text-sm tw-font-mono tw-text-foreground"
+                className="tw-text-foreground"
+                dir={isRtl ? "rtl" : "ltr"}
                 style={{
                   whiteSpace: "pre-wrap",
                   wordWrap: "break-word",
                   overflowWrap: "break-word",
+                  textAlign: isRtl ? "right" : "left",
+                  fontFamily: fontFamily || "monospace",
+                  fontSize: fontSize || undefined,
                 }}
               >
                 {usfmText}
@@ -688,7 +802,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             )}
             {viewMode === "usj" && (
               <pre className="tw-text-xs tw-font-mono tw-whitespace-pre-wrap tw-text-foreground">
-                {usjJson || "No USJ data"}
+                {renderUsjWithDirection || localizedStrings["%flexExport_noUsjData%"]}
               </pre>
             )}
           </div>
@@ -696,12 +810,17 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
         {/* Status */}
         <div className="tw-mt-4 tw-text-xs tw-text-muted-foreground">
-          {isLoading && "Loading scripture data..."}
+          {isLoading && localizedStrings["%flexExport_loadingScripture%"]}
           {!isLoading && chaptersUSJ.length > 0 && (
             <span>
-              Loaded {scrRef.book} {scrRef.chapterNum === endChapter
-                ? `chapter ${scrRef.chapterNum}`
-                : `chapters ${scrRef.chapterNum}-${endChapter}`}
+              {scrRef.chapterNum === endChapter
+                ? localizedStrings["%flexExport_loadedChapter%"]
+                    ?.replace("{book}", scrRef.book)
+                    ?.replace("{chapter}", String(scrRef.chapterNum))
+                : localizedStrings["%flexExport_loadedChapters%"]
+                    ?.replace("{book}", scrRef.book)
+                    ?.replace("{startChapter}", String(scrRef.chapterNum))
+                    ?.replace("{endChapter}", String(endChapter))}
             </span>
           )}
         </div>
