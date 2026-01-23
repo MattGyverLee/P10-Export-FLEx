@@ -7,9 +7,13 @@ import type {
   WebViewDefinition,
 } from '@papi/core';
 import type { SerializedVerseRef } from '@sillsdev/scripture';
+import { FlexBridgeService, type FlexProjectInfo, type FlexProjectDetails, type CreateTextResult } from './services/flex-bridge.service';
 
 // Import our WebView file as a string (will be bundled)
 import welcomeWebView from "./web-views/welcome.web-view?inline";
+
+// Bridge service instance (initialized during activation)
+let flexBridge: FlexBridgeService | undefined;
 
 const welcomeWebViewType = "flex-export.welcome";
 
@@ -53,6 +57,19 @@ const welcomeWebViewProvider: IWebViewProvider = {
 
 export async function activate(context: ExecutionActivationContext) {
   logger.info("flex-export extension is activating!");
+
+  // Initialize the FLEx bridge service if createProcess privilege is available
+  const { createProcess } = context.elevatedPrivileges;
+  if (createProcess) {
+    flexBridge = new FlexBridgeService(createProcess, context.executionToken);
+    if (flexBridge.isSupported()) {
+      logger.info("FlexBridge service initialized for Windows platform");
+    } else {
+      logger.warn(`FlexBridge not supported on platform: ${flexBridge.getPlatformName()}`);
+    }
+  } else {
+    logger.warn("createProcess privilege not available - FLEx export will not work");
+  }
 
   // Register the welcome webview provider
   const welcomeWebViewProviderPromise = papi.webViewProviders.registerWebViewProvider(
@@ -120,8 +137,79 @@ export async function activate(context: ExecutionActivationContext) {
     }
   );
 
+  // Register command to list FLEx projects
+  const listFlexProjectsPromise = papi.commands.registerCommand(
+    "flexExport.listFlexProjects",
+    async (): Promise<FlexProjectInfo[]> => {
+      if (!flexBridge) {
+        logger.error("FlexBridge not initialized");
+        return [];
+      }
+
+      const result = await flexBridge.listProjects();
+      if (!result.success) {
+        logger.error(`Failed to list FLEx projects: ${result.error}`);
+        return [];
+      }
+
+      return result.projects ?? [];
+    }
+  );
+
+  // Register command to get detailed project info (including all writing systems)
+  const getFlexProjectInfoPromise = papi.commands.registerCommand(
+    "flexExport.getFlexProjectInfo",
+    async (projectName: string): Promise<FlexProjectDetails | undefined> => {
+      if (!flexBridge) {
+        logger.error("FlexBridge not initialized");
+        return undefined;
+      }
+
+      const result = await flexBridge.getProjectInfo(projectName);
+      if (!result.success) {
+        logger.error(`Failed to get FLEx project info: ${result.error}`);
+        return undefined;
+      }
+
+      return result.project;
+    }
+  );
+
+  // Register command to export text to FLEx
+  const exportToFlexPromise = papi.commands.registerCommand(
+    "flexExport.exportToFlex",
+    async (
+      flexProjectName: string,
+      textTitle: string,
+      usjData: unknown,
+      options: { overwrite?: boolean; vernacularWs?: string } = {}
+    ): Promise<CreateTextResult> => {
+      if (!flexBridge) {
+        return {
+          success: false,
+          error: "FlexBridge not initialized",
+          errorCode: "UNKNOWN_ERROR",
+        };
+      }
+
+      logger.info(`Exporting to FLEx project "${flexProjectName}" with title "${textTitle}"`);
+      const result = await flexBridge.createText(flexProjectName, textTitle, usjData, options);
+
+      if (result.success) {
+        logger.info(`Successfully created text "${textTitle}" with ${result.paragraphCount} paragraphs`);
+      } else {
+        logger.error(`Failed to export to FLEx: ${result.error}`);
+      }
+
+      return result;
+    }
+  );
+
   context.registrations.add(await welcomeWebViewProviderPromise);
   context.registrations.add(await openExportDialogPromise);
+  context.registrations.add(await listFlexProjectsPromise);
+  context.registrations.add(await getFlexProjectInfoPromise);
+  context.registrations.add(await exportToFlexPromise);
 
   logger.info("flex-export extension finished activating!");
 }

@@ -135,7 +135,7 @@ The primary value of this tool over simple copy/paste is proper writing system a
 | Remarks | Analysis | `\rem` |
 | Figures | Analysis | `\fig` |
 
-**Note:** All content types above (cross-references, footnotes, introduction, remarks, figures) are **excluded by default** in the extension UI. Users must explicitly enable each type to include it in the export.
+**Note:** All content types above (cross-references, footnotes, introduction, remarks) are **excluded by default** in the extension UI (except figures). Users must explicitly enable each type to include it in the export.
 
 ### Implementation with USJ
 
@@ -279,7 +279,7 @@ foreach (var para in paragraphs) {
 - [ ] Project picker dropdown (populated from `--list-projects`)
 - [ ] Book picker (from PAPI)
 - [ ] Export button triggers full flow
-- [ ] If the first 3 letters of Flex's Default Vernacular does NOT match the language code fo the Paratext Project, a warning will be shown allowing the user to abort or continue.  
+- [ ] If the first 3 letters of Flex's Default Vernacular does NOT match the language code for the Paratext Project, a warning will be shown allowing the user to abort or continue.  
 - [ ] Success/error toast notifications
 - [ ] Settings persistence
 
@@ -299,10 +299,11 @@ foreach (var para in paragraphs) {
 - Paratext 10 installed
 - FieldWorks 9.x installed
 - Windows (initially)
+- .NET 4.8 Runtime
 
 ### Development Machine
 - Node.js 18+
-- .NET 8 SDK
+- .NET 4.8 SDK
 - Paratext 10 (for testing)
 - FieldWorks 9.x (for testing)
 

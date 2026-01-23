@@ -2,9 +2,41 @@ import { WebViewProps } from "@papi/core";
 import papi from "@papi/frontend";
 import { useLocalizedStrings, useProjectSetting, useSetting } from "@papi/frontend/react";
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { BookChapterControl, Button, Checkbox, ComboBox, Label } from "platform-bible-react";
+import { BookChapterControl, Button, Checkbox, ComboBox, Input, Label, Switch } from "platform-bible-react";
 import { isPlatformError, getChaptersForBook } from "platform-bible-utils";
 import { Canon, SerializedVerseRef } from "@sillsdev/scripture";
+
+// FLEx project types (matching bridge service)
+interface FlexProjectInfo {
+  name: string;
+  path: string;
+  vernacularWs: string;
+  analysisWs: string;
+}
+
+interface WritingSystemInfo {
+  code: string;
+  name: string;
+  isDefault: boolean;
+}
+
+interface FlexProjectDetails extends FlexProjectInfo {
+  vernacularWritingSystems: WritingSystemInfo[];
+  analysisWritingSystems: WritingSystemInfo[];
+}
+
+// FLEx project option for ComboBox
+type FlexProjectOption = {
+  label: string;
+  name: string;
+};
+
+// Writing system option for ComboBox
+type WritingSystemOption = {
+  label: string;
+  code: string;
+  isDefault: boolean;
+};
 
 // Project option type for ComboBox
 type ProjectOption = {
@@ -56,6 +88,29 @@ const LOCALIZED_STRING_KEYS = [
   "%flexExport_remark%",
   "%flexExport_figure%",
   "%flexExport_footnote%",
+  "%flexExport_flexProject%",
+  "%flexExport_selectFlexProject%",
+  "%flexExport_searchFlexProjects%",
+  "%flexExport_noFlexProjectsFound%",
+  "%flexExport_loadingFlexProjects%",
+  "%flexExport_writingSystem%",
+  "%flexExport_defaultWritingSystem%",
+  "%flexExport_textName%",
+  "%flexExport_textNamePlaceholder%",
+  "%flexExport_overwrite%",
+  "%flexExport_overwriteConfirmTitle%",
+  "%flexExport_overwriteConfirmMessage%",
+  "%flexExport_overwriteConfirmYes%",
+  "%flexExport_overwriteConfirmNo%",
+  "%flexExport_export%",
+  "%flexExport_exporting%",
+  "%flexExport_exportSuccess%",
+  "%flexExport_exportFailed%",
+  "%flexExport_windowsOnly%",
+  "%flexExport_noFlexProjectSelected%",
+  "%flexExport_flexNotFound%",
+  "%flexExport_flexLoadError%",
+  "%flexExport_flexNotAvailable%",
 ];
 
 globalThis.webViewComponent = function ExportToFlexWebView({
@@ -80,12 +135,81 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // End chapter for range selection (defaults to start chapter)
   const [endChapter, setEndChapter] = useState(initialScrRef?.chapterNum || 1);
 
-  // Content filter toggles (all disabled by default, except figures)
-  const [includeFootnotes, setIncludeFootnotes] = useState(false);
-  const [includeCrossRefs, setIncludeCrossRefs] = useState(false);
-  const [includeIntro, setIncludeIntro] = useState(false);
-  const [includeRemarks, setIncludeRemarks] = useState(false);
-  const [includeFigures, setIncludeFigures] = useState(true);
+  // Project settings - persisted per Paratext project
+  const [savedFlexProjectName, setSavedFlexProjectName] = useProjectSetting(
+    projectId ?? undefined,
+    "flexExport.flexProjectName",
+    ""
+  );
+  const [savedWritingSystemCode, setSavedWritingSystemCode] = useProjectSetting(
+    projectId ?? undefined,
+    "flexExport.writingSystemCode",
+    ""
+  );
+  const [savedOverwriteEnabled, setSavedOverwriteEnabled] = useProjectSetting(
+    projectId ?? undefined,
+    "flexExport.overwriteEnabled",
+    false
+  );
+  const [savedIncludeFootnotes, setSavedIncludeFootnotes] = useProjectSetting(
+    projectId ?? undefined,
+    "flexExport.includeFootnotes",
+    false
+  );
+  const [savedIncludeCrossRefs, setSavedIncludeCrossRefs] = useProjectSetting(
+    projectId ?? undefined,
+    "flexExport.includeCrossRefs",
+    false
+  );
+  const [savedIncludeIntro, setSavedIncludeIntro] = useProjectSetting(
+    projectId ?? undefined,
+    "flexExport.includeIntro",
+    false
+  );
+  const [savedIncludeRemarks, setSavedIncludeRemarks] = useProjectSetting(
+    projectId ?? undefined,
+    "flexExport.includeRemarks",
+    false
+  );
+  const [savedIncludeFigures, setSavedIncludeFigures] = useProjectSetting(
+    projectId ?? undefined,
+    "flexExport.includeFigures",
+    true
+  );
+
+  // Content filter toggles - use persisted values (handle potential errors from useProjectSetting)
+  const includeFootnotes = isPlatformError(savedIncludeFootnotes) ? false : savedIncludeFootnotes;
+  const includeCrossRefs = isPlatformError(savedIncludeCrossRefs) ? false : savedIncludeCrossRefs;
+  const includeIntro = isPlatformError(savedIncludeIntro) ? false : savedIncludeIntro;
+  const includeRemarks = isPlatformError(savedIncludeRemarks) ? false : savedIncludeRemarks;
+  const includeFigures = isPlatformError(savedIncludeFigures) ? true : savedIncludeFigures;
+
+  // Setter functions that persist to project settings
+  const setIncludeFootnotes = useCallback((value: boolean) => setSavedIncludeFootnotes(value), [setSavedIncludeFootnotes]);
+  const setIncludeCrossRefs = useCallback((value: boolean) => setSavedIncludeCrossRefs(value), [setSavedIncludeCrossRefs]);
+  const setIncludeIntro = useCallback((value: boolean) => setSavedIncludeIntro(value), [setSavedIncludeIntro]);
+  const setIncludeRemarks = useCallback((value: boolean) => setSavedIncludeRemarks(value), [setSavedIncludeRemarks]);
+  const setIncludeFigures = useCallback((value: boolean) => setSavedIncludeFigures(value), [setSavedIncludeFigures]);
+
+  // FLEx project state
+  const [flexProjects, setFlexProjects] = useState<FlexProjectOption[]>([]);
+  const [selectedFlexProject, setSelectedFlexProject] = useState<FlexProjectOption | undefined>();
+  const [flexProjectDetails, setFlexProjectDetails] = useState<FlexProjectDetails | undefined>();
+  const [isLoadingFlexProjects, setIsLoadingFlexProjects] = useState(false);
+  const [flexLoadError, setFlexLoadError] = useState<string | undefined>();
+
+  // Writing system state
+  const [selectedWritingSystem, setSelectedWritingSystem] = useState<WritingSystemOption | undefined>();
+
+  // Text name and overwrite state
+  const [textName, setTextName] = useState("");
+  const overwriteEnabled = isPlatformError(savedOverwriteEnabled) ? false : savedOverwriteEnabled;
+  const setOverwriteEnabled = useCallback((value: boolean) => setSavedOverwriteEnabled(value), [setSavedOverwriteEnabled]);
+  const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false);
+
+  // Export state
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState<{ success: boolean; message: string } | undefined>();
 
   // Get chapter count for current book
   const chapterCount = useMemo(() => {
@@ -118,6 +242,136 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
   // Secret mode: include resources when Ctrl+click on project selector
   const [includeResources, setIncludeResources] = useState(false);
+
+  // Get the saved FLEx project name (handle potential error)
+  const savedFlexProject = isPlatformError(savedFlexProjectName) ? "" : savedFlexProjectName;
+
+  // Load FLEx projects on mount
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchFlexProjects = async () => {
+      setIsLoadingFlexProjects(true);
+      setFlexLoadError(undefined);
+      try {
+        const projects = await papi.commands.sendCommand(
+          "flexExport.listFlexProjects"
+        ) as FlexProjectInfo[];
+
+        if (!cancelled) {
+          if (projects && projects.length > 0) {
+            const options: FlexProjectOption[] = projects.map((p) => ({
+              label: p.name,
+              name: p.name,
+            }));
+            setFlexProjects(options);
+
+            // Restore saved FLEx project selection if available
+            if (savedFlexProject) {
+              const savedOption = options.find((p) => p.name === savedFlexProject);
+              if (savedOption) {
+                setSelectedFlexProject(savedOption);
+              }
+            }
+          } else {
+            // No projects found - FLEx may not be installed or no projects exist
+            setFlexProjects([]);
+            setFlexLoadError("no_projects");
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch FLEx projects:", err);
+        if (!cancelled) {
+          setFlexProjects([]);
+          setFlexLoadError(err instanceof Error ? err.message : String(err));
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingFlexProjects(false);
+        }
+      }
+    };
+
+    fetchFlexProjects();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [savedFlexProject]);
+
+  // Get the saved writing system code (handle potential error)
+  const savedWsCode = isPlatformError(savedWritingSystemCode) ? "" : savedWritingSystemCode;
+
+  // Load FLEx project details when a project is selected
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchProjectDetails = async () => {
+      if (!selectedFlexProject) {
+        setFlexProjectDetails(undefined);
+        setSelectedWritingSystem(undefined);
+        return;
+      }
+
+      try {
+        const details = await papi.commands.sendCommand(
+          "flexExport.getFlexProjectInfo",
+          selectedFlexProject.name
+        ) as FlexProjectDetails | undefined;
+
+        if (!cancelled && details) {
+          setFlexProjectDetails(details);
+
+          // Try to restore saved writing system, fall back to default
+          let wsToSelect: WritingSystemInfo | undefined;
+
+          if (savedWsCode && details.vernacularWritingSystems) {
+            wsToSelect = details.vernacularWritingSystems.find((ws) => ws.code === savedWsCode);
+          }
+
+          // If no saved WS or saved WS not found, use default
+          if (!wsToSelect) {
+            wsToSelect = details.vernacularWritingSystems?.find((ws) => ws.isDefault)
+              || details.vernacularWritingSystems?.[0];
+          }
+
+          if (wsToSelect) {
+            setSelectedWritingSystem({
+              label: `${wsToSelect.name} (${wsToSelect.code})`,
+              code: wsToSelect.code,
+              isDefault: wsToSelect.isDefault,
+            });
+          } else {
+            setSelectedWritingSystem(undefined);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch FLEx project details:", err);
+      }
+    };
+
+    fetchProjectDetails();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedFlexProject, savedWsCode]);
+
+  // Auto-generate text name from book and chapter range
+  useEffect(() => {
+    if (!scrRef.book) return;
+
+    const bookName = Canon.bookIdToEnglishName(scrRef.book);
+    let generatedName: string;
+
+    if (scrRef.chapterNum === endChapter) {
+      generatedName = `${bookName} ${scrRef.chapterNum}`;
+    } else {
+      generatedName = `${bookName} ${scrRef.chapterNum}-${endChapter}`;
+    }
+
+    setTextName(generatedName);
+  }, [scrRef.book, scrRef.chapterNum, endChapter]);
 
   // Fetch available projects (only editable projects unless secret mode enabled)
   useEffect(() => {
@@ -196,8 +450,39 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     [includeResources]
   );
 
-  // Get project name for display (fallback if ComboBox hasn't loaded)
-  const [projectNameSetting] = useProjectSetting(projectId ?? undefined, "platform.name", "");
+  // Handle FLEx project selection
+  const handleFlexProjectChange = useCallback(
+    (option: FlexProjectOption | undefined) => {
+      setSelectedFlexProject(option);
+      setExportStatus(undefined);
+      // Persist the selection to project settings
+      setSavedFlexProjectName(option?.name || "");
+    },
+    [setSavedFlexProjectName]
+  );
+
+  // Handle writing system selection
+  const handleWritingSystemChange = useCallback(
+    (option: WritingSystemOption | undefined) => {
+      setSelectedWritingSystem(option);
+      // Persist the selection to project settings
+      setSavedWritingSystemCode(option?.code || "");
+    },
+    [setSavedWritingSystemCode]
+  );
+
+  // Writing system options with default label (convert WritingSystemInfo to WritingSystemOption)
+  const writingSystemOptions = useMemo((): WritingSystemOption[] => {
+    if (!flexProjectDetails?.vernacularWritingSystems) return [];
+    return flexProjectDetails.vernacularWritingSystems.map((ws) => {
+      const defaultSuffix = ws.isDefault ? ` ${localizedStrings["%flexExport_defaultWritingSystem%"] || "(default)"}` : "";
+      return {
+        label: `${ws.name} (${ws.code})${defaultSuffix}`,
+        code: ws.code,
+        isDefault: ws.isDefault,
+      };
+    });
+  }, [flexProjectDetails, localizedStrings]);
 
   // Get text direction setting for RTL support
   const [textDirectionSetting] = useProjectSetting(projectId ?? undefined, "platform.textDirection", "");
@@ -208,13 +493,6 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   const [projectFontSize] = useProjectSetting(projectId ?? undefined, "DefaultFontSize", "");
   const fontFamily = isPlatformError(projectFont) ? undefined : projectFont || undefined;
   const fontSize = isPlatformError(projectFontSize) ? undefined : projectFontSize ? `${projectFontSize}pt` : undefined;
-
-  const displayProjectName = useMemo(() => {
-    if (!projectId) return localizedStrings["%flexExport_noProjectSelected%"];
-    if (selectedProject) return selectedProject.label;
-    if (isPlatformError(projectNameSetting)) return projectId;
-    return projectNameSetting || projectId;
-  }, [projectId, selectedProject, projectNameSetting, localizedStrings]);
 
   // USJ node type interface
   interface UsjNode {
@@ -584,6 +862,68 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     [includeFootnotes, includeCrossRefs, includeIntro, includeRemarks, includeFigures]
   );
 
+  // Handle export button click
+  const handleExport = useCallback(async () => {
+    if (!selectedFlexProject || !textName || !chaptersUSJ.length) return;
+
+    // If overwrite is enabled, show confirmation dialog first
+    if (overwriteEnabled && !showOverwriteConfirm) {
+      setShowOverwriteConfirm(true);
+      return;
+    }
+
+    setShowOverwriteConfirm(false);
+    setIsExporting(true);
+    setExportStatus(undefined);
+
+    try {
+      // Filter USJ content based on toggles before export
+      const filteredChapters = chaptersUSJ.map((chapter, idx) => {
+        const isFirstChapter = idx === 0 && scrRef.chapterNum === 1;
+        if (chapter.content) {
+          return {
+            ...chapter,
+            content: filterUsjContent(chapter.content as (UsjNode | string)[], isFirstChapter),
+          };
+        }
+        return chapter;
+      });
+
+      const result = await papi.commands.sendCommand(
+        "flexExport.exportToFlex",
+        selectedFlexProject.name,
+        textName,
+        filteredChapters,
+        {
+          overwrite: overwriteEnabled,
+          vernacularWs: selectedWritingSystem?.code,
+        }
+      ) as { success: boolean; paragraphCount?: number; textName?: string; error?: string };
+
+      if (result.success) {
+        const successMessage = (localizedStrings["%flexExport_exportSuccess%"] || "Successfully exported {paragraphCount} paragraphs to \"{textName}\"")
+          .replace("{paragraphCount}", String(result.paragraphCount || 0))
+          .replace("{textName}", result.textName || textName);
+        setExportStatus({ success: true, message: successMessage });
+      } else {
+        const errorMessage = (localizedStrings["%flexExport_exportFailed%"] || "Export failed: {error}")
+          .replace("{error}", result.error || "Unknown error");
+        setExportStatus({ success: false, message: errorMessage });
+      }
+    } catch (err) {
+      const errorMessage = (localizedStrings["%flexExport_exportFailed%"] || "Export failed: {error}")
+        .replace("{error}", err instanceof Error ? err.message : String(err));
+      setExportStatus({ success: false, message: errorMessage });
+    } finally {
+      setIsExporting(false);
+    }
+  }, [selectedFlexProject, textName, chaptersUSJ, overwriteEnabled, showOverwriteConfirm, selectedWritingSystem, scrRef.chapterNum, filterUsjContent, localizedStrings]);
+
+  // Cancel overwrite confirmation
+  const handleCancelOverwrite = useCallback(() => {
+    setShowOverwriteConfirm(false);
+  }, []);
+
   // Format USJ as JSON for debug view (with filtering applied)
   const usjJson = useMemo(() => {
     if (!chaptersUSJ.length) return "";
@@ -753,6 +1093,130 @@ globalThis.webViewComponent = function ExportToFlexWebView({
               </label>
             </div>
           </div>
+        </div>
+
+        {/* FLEx Export Settings */}
+        <div className="tw-mb-6 tw-p-4 tw-border tw-border-border tw-rounded-md tw-bg-card">
+          <Label className="tw-text-sm tw-font-medium tw-mb-3 tw-block tw-text-foreground">
+            {localizedStrings["%flexExport_title%"]}
+          </Label>
+
+          {/* Error message when FLEx is not available */}
+          {flexLoadError && (
+            <div className="tw-p-3 tw-bg-red-50 tw-border tw-border-red-200 tw-rounded-md dark:tw-bg-red-900/20 dark:tw-border-red-700 tw-mb-4">
+              <p className="tw-text-sm tw-text-red-800 dark:tw-text-red-200">
+                {flexLoadError === "no_projects"
+                  ? localizedStrings["%flexExport_flexNotFound%"]
+                  : (localizedStrings["%flexExport_flexLoadError%"] || "").replace("{error}", flexLoadError)}
+              </p>
+            </div>
+          )}
+
+          <div className="tw-grid tw-grid-cols-1 md:tw-grid-cols-2 tw-gap-4">
+            {/* Left: FLEx Project and Writing System */}
+            <div className="tw-space-y-3">
+              {/* FLEx Project Selector */}
+              <div className="tw-flex tw-items-center tw-gap-3">
+                <Label className="tw-text-sm tw-text-foreground tw-whitespace-nowrap">
+                  {localizedStrings["%flexExport_flexProject%"]}
+                </Label>
+                <ComboBox<FlexProjectOption>
+                  options={flexProjects}
+                  value={selectedFlexProject}
+                  onChange={handleFlexProjectChange}
+                  getOptionLabel={(option: FlexProjectOption) => option.label}
+                  buttonPlaceholder={isLoadingFlexProjects
+                    ? localizedStrings["%flexExport_loadingFlexProjects%"]
+                    : flexLoadError
+                      ? localizedStrings["%flexExport_flexNotAvailable%"]
+                      : localizedStrings["%flexExport_selectFlexProject%"]}
+                  textPlaceholder={localizedStrings["%flexExport_searchFlexProjects%"]}
+                  commandEmptyMessage={localizedStrings["%flexExport_noFlexProjectsFound%"]}
+                  buttonVariant="outline"
+                  disabled={!!flexLoadError}
+                />
+              </div>
+
+              {/* Writing System Selector */}
+              {flexProjectDetails && writingSystemOptions.length > 0 && (
+                <div className="tw-flex tw-items-center tw-gap-3">
+                  <Label className="tw-text-sm tw-text-foreground tw-whitespace-nowrap">
+                    {localizedStrings["%flexExport_writingSystem%"]}
+                  </Label>
+                  <ComboBox<WritingSystemOption>
+                    options={writingSystemOptions}
+                    value={selectedWritingSystem}
+                    onChange={handleWritingSystemChange}
+                    getOptionLabel={(ws: WritingSystemOption) => ws.label}
+                    buttonVariant="outline"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Right: Text Name and Overwrite */}
+            <div className="tw-space-y-3">
+              {/* Text Name Field */}
+              <div className="tw-flex tw-items-center tw-gap-3">
+                <Label className="tw-text-sm tw-text-foreground tw-whitespace-nowrap">
+                  {localizedStrings["%flexExport_textName%"]}
+                </Label>
+                <Input
+                  value={textName}
+                  onChange={(e) => setTextName(e.target.value)}
+                  placeholder={localizedStrings["%flexExport_textNamePlaceholder%"]}
+                  className="tw-w-40"
+                />
+              </div>
+
+              {/* Overwrite Toggle */}
+              <div className="tw-flex tw-items-center tw-gap-3">
+                <Switch
+                  checked={overwriteEnabled}
+                  onCheckedChange={setOverwriteEnabled}
+                />
+                <Label className="tw-text-sm tw-text-foreground">
+                  {localizedStrings["%flexExport_overwrite%"]}
+                </Label>
+              </div>
+            </div>
+          </div>
+
+          {/* Export Button and Status */}
+          <div className="tw-mt-4 tw-flex tw-items-center tw-gap-4">
+            <Button
+              onClick={handleExport}
+              disabled={!selectedFlexProject || !textName || !chaptersUSJ.length || isExporting}
+            >
+              {isExporting
+                ? localizedStrings["%flexExport_exporting%"]
+                : localizedStrings["%flexExport_export%"]}
+            </Button>
+
+            {exportStatus && (
+              <span className={`tw-text-sm ${exportStatus.success ? "tw-text-green-600" : "tw-text-red-600"}`}>
+                {exportStatus.message}
+              </span>
+            )}
+          </div>
+
+          {/* Overwrite Confirmation Dialog */}
+          {showOverwriteConfirm && (
+            <div className="tw-mt-4 tw-p-3 tw-bg-amber-50 tw-border tw-border-amber-200 tw-rounded-md dark:tw-bg-amber-900/20 dark:tw-border-amber-700">
+              <p className="tw-text-sm tw-text-amber-800 dark:tw-text-amber-200 tw-mb-2">
+                {(localizedStrings["%flexExport_overwriteConfirmMessage%"] || "")
+                  .replace("{textName}", textName)}
+              </p>
+              <div className="tw-flex tw-gap-2">
+                <Button size="sm" variant="destructive" onClick={handleExport}>
+                  {localizedStrings["%flexExport_overwriteConfirmYes%"]}
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleCancelOverwrite}>
+                  {localizedStrings["%flexExport_overwriteConfirmNo%"]}
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Preview Toggle */}
