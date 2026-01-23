@@ -1,10 +1,10 @@
 import { WebViewProps } from "@papi/core";
 import papi from "@papi/frontend";
 import { useProjectSetting } from "@papi/frontend/react";
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { BookChapterControl, Button, Checkbox, ComboBox, Label } from "platform-bible-react";
 import { isPlatformError, getChaptersForBook } from "platform-bible-utils";
-import { Canon } from "@sillsdev/scripture";
+import { Canon, SerializedVerseRef } from "@sillsdev/scripture";
 
 // Project option type for ComboBox
 type ProjectOption = {
@@ -12,20 +12,41 @@ type ProjectOption = {
   id: string;
 };
 
+// Default scripture reference
+const DEFAULT_SCR_REF: SerializedVerseRef = { book: "GEN", chapterNum: 1, verseNum: 1 };
+
 globalThis.webViewComponent = function ExportToFlexWebView({
   projectId,
   updateWebViewDefinition,
+  useWebViewState,
 }: WebViewProps) {
+  // Get initial scripture reference from WebView state (set when opened from a project)
+  const [initialScrRef] = useWebViewState<SerializedVerseRef | undefined>('initialScrRef', undefined);
+
+  // Track if we've applied the initial state
+  const initializedRef = useRef(false);
+
   // Scripture reference state with setter for BookChapterControl
-  const [scrRef, setScrRef] = useState({ book: "GEN", chapterNum: 1, verseNum: 1 });
+  const [scrRef, setScrRef] = useState<SerializedVerseRef>(initialScrRef || DEFAULT_SCR_REF);
 
   // End chapter for range selection (defaults to start chapter)
-  const [endChapter, setEndChapter] = useState(1);
+  const [endChapter, setEndChapter] = useState(initialScrRef?.chapterNum || 1);
 
-  // Content filter toggles (all disabled by default)
+  // Apply initial scripture reference once when it becomes available
+  useEffect(() => {
+    if (initialScrRef && !initializedRef.current) {
+      initializedRef.current = true;
+      setScrRef(initialScrRef);
+      setEndChapter(initialScrRef.chapterNum);
+    }
+  }, [initialScrRef]);
+
+  // Content filter toggles (all disabled by default, except figures)
   const [includeFootnotes, setIncludeFootnotes] = useState(false);
   const [includeCrossRefs, setIncludeCrossRefs] = useState(false);
   const [includeIntro, setIncludeIntro] = useState(false);
+  const [includeRemarks, setIncludeRemarks] = useState(false);
+  const [includeFigures, setIncludeFigures] = useState(true);
 
   // Get chapter count for current book
   const chapterCount = useMemo(() => {
@@ -203,7 +224,17 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // Helper to check if a marker is an introduction marker
   const isIntroMarker = (marker: string): boolean => {
     // Intro markers: imt, is, ip, ipi, im, imi, ipq, imq, ipr, iq, ib, ili, iot, io, iex, ie
-    return /^(imt\d?|is\d?|ip|ipi|im|imi|ipq|imq|ipr|iq\d?|ib|ili\d?|iot|io\d?|iex|ie|rem)$/.test(marker);
+    return /^(imt\d?|is\d?|ip|ipi|im|imi|ipq|imq|ipr|iq\d?|ib|ili\d?|iot|io\d?|iex|ie)$/.test(marker);
+  };
+
+  // Helper to check if a marker is a remark marker
+  const isRemarkMarker = (marker: string): boolean => {
+    return marker === "rem";
+  };
+
+  // Helper to check if a marker is a figure marker
+  const isFigureMarker = (marker: string): boolean => {
+    return marker === "fig";
   };
 
   // Helper to check if a marker is a cross-reference marker
@@ -241,10 +272,18 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             if (!includeCrossRefs && node.marker === "r") {
               return "";
             }
+            // Skip remarks if not including them
+            if (!includeRemarks && isRemarkMarker(node.marker)) {
+              return "";
+            }
             const paraContent = node.content ? convertToUsfm(node.content, isFirstChapter) : "";
             return `\\${node.marker} ${paraContent}\n`;
           }
           if (node.type === "char" && node.marker) {
+            // Skip figures if not including them
+            if (!includeFigures && isFigureMarker(node.marker)) {
+              return "";
+            }
             const charContent = node.content ? convertToUsfm(node.content, isFirstChapter) : "";
             return `\\${node.marker} ${charContent}\\${node.marker}*`;
           }
@@ -278,7 +317,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         return "";
       })
       .join("\n");
-  }, [chaptersUSJ, isLoading, includeFootnotes, includeCrossRefs, includeIntro, scrRef.chapterNum]);
+  }, [chaptersUSJ, isLoading, includeFootnotes, includeCrossRefs, includeIntro, includeRemarks, includeFigures, scrRef.chapterNum]);
 
   // Convert USJ to formatted HTML-like preview
   const formattedPreview = useMemo(() => {
@@ -315,11 +354,16 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           if (!includeCrossRefs && node.marker === "r") {
             return null;
           }
+          // Skip remarks if not including them
+          if (!includeRemarks && isRemarkMarker(node.marker)) {
+            return null;
+          }
 
           const isHeader = node.marker.startsWith("s") || node.marker === "ms";
           const isPoetry = node.marker.startsWith("q");
           const isBlank = node.marker === "b";
           const isIntro = isIntroMarker(node.marker);
+          const isRemark = isRemarkMarker(node.marker);
 
           if (isBlank) {
             return <div key={itemKey} className="tw-h-3" />;
@@ -346,6 +390,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
               </p>
             );
           }
+          if (isRemark) {
+            return (
+              <p key={itemKey} className="tw-mb-2 tw-text-sm tw-text-muted-foreground tw-bg-muted tw-p-1 tw-rounded">
+                [Remark: {node.content && renderContent(node.content, itemKey, isFirstChapter)}]
+              </p>
+            );
+          }
           return (
             <p key={itemKey} className="tw-mb-2">
               {node.content && renderContent(node.content, itemKey, isFirstChapter)}
@@ -353,13 +404,25 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           );
         }
         if (node.type === "char" && node.marker) {
+          // Skip figures if not including them
+          if (!includeFigures && isFigureMarker(node.marker)) {
+            return null;
+          }
           const isBold = node.marker === "bd" || node.marker === "bdit";
           const isItalic = node.marker === "it" || node.marker === "bdit";
           const isWordsOfJesus = node.marker === "wj";
+          const isFigure = isFigureMarker(node.marker);
           let className = "";
           if (isBold) className += "tw-font-bold ";
           if (isItalic) className += "tw-italic ";
           if (isWordsOfJesus) className += "tw-text-red-600 ";
+          if (isFigure) {
+            return (
+              <span key={itemKey} className="tw-text-sm tw-text-muted-foreground tw-bg-muted tw-p-1 tw-rounded">
+                [Figure: {node.content && renderContent(node.content, itemKey, isFirstChapter)}]
+              </span>
+            );
+          }
           return (
             <span key={itemKey} className={className}>
               {node.content && renderContent(node.content, itemKey, isFirstChapter)}
@@ -401,7 +464,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         })}
       </div>
     );
-  }, [chaptersUSJ, isLoading, includeFootnotes, includeCrossRefs, includeIntro, scrRef.chapterNum]);
+  }, [chaptersUSJ, isLoading, includeFootnotes, includeCrossRefs, includeIntro, includeRemarks, includeFigures, scrRef.chapterNum]);
 
   // Filter USJ content based on toggles
   const filterUsjContent = useCallback(
@@ -419,6 +482,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             if (!includeCrossRefs && node.marker === "r") {
               return null;
             }
+            if (!includeRemarks && isRemarkMarker(node.marker)) {
+              return null;
+            }
           }
 
           // Skip footnotes and cross-references
@@ -427,6 +493,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
               return null;
             }
             if (!includeCrossRefs && isCrossRefMarker(node.marker)) {
+              return null;
+            }
+          }
+
+          // Skip figures
+          if (node.type === "char" && node.marker) {
+            if (!includeFigures && isFigureMarker(node.marker)) {
               return null;
             }
           }
@@ -441,7 +514,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         })
         .filter((item): item is UsjNode | string => item !== null);
     },
-    [includeFootnotes, includeCrossRefs, includeIntro]
+    [includeFootnotes, includeCrossRefs, includeIntro, includeRemarks, includeFigures]
   );
 
   // Format USJ as JSON for debug view (with filtering applied)
@@ -464,78 +537,100 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
   return (
     <div className="tw-p-4 tw-min-h-screen tw-bg-background tw-text-foreground">
-      <div className="tw-max-w-3xl tw-mx-auto">
+      <div className="tw-max-w-4xl tw-mx-auto">
         <h1 className="tw-text-xl tw-font-bold tw-mb-4 tw-text-foreground">
           Export to FLEx
         </h1>
 
-        {/* Project Selection */}
-        <div className="tw-mb-4 tw-flex tw-items-center tw-gap-3">
-          <Label className="tw-text-sm tw-text-foreground">Project:</Label>
-          <ComboBox<ProjectOption>
-            options={projectOptions || []}
-            value={selectedProject}
-            onChange={handleProjectChange}
-            getOptionLabel={(option: ProjectOption) => option.label}
-            buttonPlaceholder="Select a project"
-            textPlaceholder="Search projects..."
-            commandEmptyMessage="No projects found"
-            buttonVariant="outline"
-          />
-        </div>
+        {/* Settings Row - Project/Chapter on left, Include Options on right */}
+        <div className="tw-flex tw-flex-col sm:tw-flex-row sm:tw-items-start tw-gap-6 tw-mb-4">
+          {/* Left Column: Project and Chapter Selection */}
+          <div>
+            {/* Project Selection */}
+            <div className="tw-mb-4 tw-flex tw-items-center tw-gap-3">
+              <Label className="tw-text-sm tw-text-foreground">Paratext Project:</Label>
+              <ComboBox<ProjectOption>
+                options={projectOptions || []}
+                value={selectedProject}
+                onChange={handleProjectChange}
+                getOptionLabel={(option: ProjectOption) => option.label}
+                buttonPlaceholder="Select a project"
+                textPlaceholder="Search projects..."
+                commandEmptyMessage="No projects found"
+                buttonVariant="outline"
+              />
+            </div>
 
-        {/* Scripture Reference Selector */}
-        <div className="tw-mb-4">
-          <Label className="tw-text-sm tw-font-medium tw-mb-2 tw-block tw-text-foreground">
-            Select Book and Chapter Range:
-          </Label>
-          <div className="tw-flex tw-items-center tw-gap-3 tw-flex-wrap">
-            <BookChapterControl
-              scrRef={scrRef}
-              handleSubmit={handleStartRefChange}
-            />
-            <Label className="tw-text-sm tw-text-foreground">to</Label>
-            <ComboBox<number>
-              options={endChapterOptions}
-              value={endChapter}
-              onChange={(val: number | undefined) => val && setEndChapter(val)}
-              getOptionLabel={(opt: number) => opt.toString()}
-              buttonPlaceholder="End"
-              buttonClassName="tw-w-24"
-            />
+            {/* Scripture Reference Selector */}
+            <div>
+              <Label className="tw-text-sm tw-font-medium tw-mb-2 tw-block tw-text-foreground">
+                Select Book and Chapter Range:
+              </Label>
+              <div className="tw-flex tw-items-center tw-gap-3 tw-flex-wrap">
+                <BookChapterControl
+                  scrRef={scrRef}
+                  handleSubmit={handleStartRefChange}
+                />
+                <Label className="tw-text-sm tw-text-foreground">to chapter </Label>
+                <ComboBox<number>
+                  options={endChapterOptions}
+                  value={endChapter}
+                  onChange={(val: number | undefined) => val && setEndChapter(val)}
+                  getOptionLabel={(opt: number) => opt.toString()}
+                  buttonPlaceholder="End"
+                  buttonClassName="tw-w-24"
+                />
+              </div>
+            </div>
           </div>
-        </div>
 
-        {/* Content Options */}
-        <div className="tw-mb-4">
-          <Label className="tw-text-sm tw-font-medium tw-mb-2 tw-block tw-text-foreground">
-            Include in Export:
-          </Label>
-          <div className="tw-flex tw-flex-col tw-gap-2">
-            <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
-              <Checkbox
-                checked={includeFootnotes}
-                onCheckedChange={(checked: boolean | "indeterminate") => setIncludeFootnotes(checked === true)}
-              />
-              <span className="tw-text-sm tw-text-foreground">Footnotes</span>
-            </label>
-            <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
-              <Checkbox
-                checked={includeCrossRefs}
-                onCheckedChange={(checked: boolean | "indeterminate") => setIncludeCrossRefs(checked === true)}
-              />
-              <span className="tw-text-sm tw-text-foreground">Cross References (\x and \r)</span>
-            </label>
-            <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
-              <Checkbox
-                checked={includeIntro}
-                onCheckedChange={(checked: boolean | "indeterminate") => setIncludeIntro(checked === true)}
-                disabled={scrRef.chapterNum !== 1}
-              />
-              <span className={`tw-text-sm ${scrRef.chapterNum !== 1 ? "tw-text-muted-foreground" : "tw-text-foreground"}`}>
-                Introduction (for chapter 1)
-              </span>
-            </label>
+          {/* Right Column: Content Options */}
+          <div className="tw-shrink-0 tw-border tw-border-border tw-rounded-md tw-bg-card">
+            <div className="tw-p-2.5 tw-border-b tw-border-border tw-bg-muted">
+              <Label className="tw-text-sm tw-font-medium tw-text-foreground">
+                Include in Export:
+              </Label>
+            </div>
+            <div className="tw-p-2.5 tw-flex tw-flex-col tw-gap-2">
+              <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+                <Checkbox
+                  checked={includeFootnotes}
+                  onCheckedChange={(checked: boolean | "indeterminate") => setIncludeFootnotes(checked === true)}
+                />
+                <span className="tw-text-sm tw-text-foreground">Footnotes</span>
+              </label>
+              <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+                <Checkbox
+                  checked={includeCrossRefs}
+                  onCheckedChange={(checked: boolean | "indeterminate") => setIncludeCrossRefs(checked === true)}
+                />
+                <span className="tw-text-sm tw-text-foreground">Cross References (\x and \r)</span>
+              </label>
+              <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+                <Checkbox
+                  checked={includeIntro}
+                  onCheckedChange={(checked: boolean | "indeterminate") => setIncludeIntro(checked === true)}
+                  disabled={scrRef.chapterNum !== 1}
+                />
+                <span className={`tw-text-sm ${scrRef.chapterNum !== 1 ? "tw-text-muted-foreground" : "tw-text-foreground"}`}>
+                  Introduction (for chapter 1)
+                </span>
+              </label>
+              <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+                <Checkbox
+                  checked={includeRemarks}
+                  onCheckedChange={(checked: boolean | "indeterminate") => setIncludeRemarks(checked === true)}
+                />
+                <span className="tw-text-sm tw-text-foreground">Remarks (\rem)</span>
+              </label>
+              <label className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+                <Checkbox
+                  checked={includeFigures}
+                  onCheckedChange={(checked: boolean | "indeterminate") => setIncludeFigures(checked === true)}
+                />
+                <span className="tw-text-sm tw-text-foreground">Figures/Images (\fig)</span>
+              </label>
+            </div>
           </div>
         </div>
 

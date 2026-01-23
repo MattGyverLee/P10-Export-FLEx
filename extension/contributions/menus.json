@@ -7,7 +7,15 @@
   "defaultWebViewTopMenu": {
     "columns": {},
     "groups": {},
-    "items": []
+    "items": [
+      {
+        "label": "%mainMenu_exportToFlex%",
+        "localizeNotes": "Web view main menu > Project > Export Text to FLEx",
+        "group": "platform.projectTop",
+        "order": 10,
+        "command": "flexExport.openExportDialog"
+      }
+    ]
   },
   "defaultWebViewContextMenu": {
     "groups": {},

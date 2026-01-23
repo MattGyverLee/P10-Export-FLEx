@@ -38,15 +38,28 @@ When someone wants to translate a text using FLExTrans, the first step is to imp
 
 **Responsibilities:**
 - Register command "Export to FLEx" in Paranext
-- Get scripture data via PAPI (`platformScripture.USJ_Book`)
+- Get scripture data via PAPI (`platformScripture.USJ_Chapter` for each chapter in range)
 - Display UI for:
-  - FLEx project selection (auto-discovered from system)
-  - Book selection (current book as default)
-  - Chapter range (optional, default: whole book)
-  - Import options (footnotes, cross-refs, etc.)
+  - Paratext project selection (filtered to editable projects only, excluding resources)
+  - Book and chapter range selection using BookChapterControl component
+  - Content filter options (disabled by default):
+    - Footnotes (\f)
+    - Cross References (\x and \r paragraphs)
+    - Introduction markers (only for chapter 1)
+    - Remarks (\rem)
+  - Content filter options (enabled by default):
+    - Figures (\fig)
+  - Preview tabs: Formatted, USFM, and USJ views
 - Spawn FlexTextBridge CLI and pass scripture data
 - Display success/error feedback to user
 - Persist settings between sessions
+
+**UI Layout:**
+- Two-column responsive grid (stacks on narrow screens)
+- Left column: Project selector, Book/Chapter range selector
+- Right column: Content filter checkboxes ("Include in Export")
+- Below: Preview toggle buttons (Formatted/USFM/USJ) and preview panel
+- Status line showing loaded chapter(s)
 
 **Manifest Requirements:**
 ```json
@@ -115,6 +128,11 @@ The primary value of this tool over simple copy/paste is proper writing system a
 | Verse numbers | Analysis | `1`, `2`, `3` |
 | Cross-references | Analysis | `\x`, `\xo 1:1`, `\xt Gen 1:1\x*` |
 | Footnotes | Analysis | `\f`, `\fr 1:1`, `\ft ...` |
+| Introduction | Analysis | `\imt`, `\is`, `\ip`, etc. |
+| Remarks | Analysis | `\rem` |
+| Figures | Analysis | `\fig` |
+
+**Note:** All content types above (cross-references, footnotes, introduction, remarks, figures) are **excluded by default** in the extension UI. Users must explicitly enable each type to include it in the export.
 
 ### Implementation with USJ
 
@@ -138,12 +156,16 @@ This eliminates the need for regex parsing - we can walk the USJ tree and tag ea
 ```typescript
 // Get project data provider for current project
 const pdp = await papi.projectDataProviders.get(
-  'platformScripture.USJ_Book',
+  'platformScripture.USJ_Chapter',
   projectId
 );
 
-// Get book as USJ
-const bookUsj = await pdp.getBookUSJ(new VerseRef('MRK', 1, 1));
+// Get chapters in range as USJ (one at a time)
+for (let ch = startChapter; ch <= endChapter; ch++) {
+  const ref = { book: 'MRK', chapterNum: ch, verseNum: 1 };
+  const chapterUsj = await pdp.getChapterUSJ(ref);
+  chapters.push(chapterUsj);
+}
 ```
 
 ### Text Creation (Bridge)
@@ -182,8 +204,11 @@ foreach (var para in paragraphs) {
 
 ### Extension Settings (persisted in Paranext)
 - `flexExport.defaultFlexProject`: string - Last used FLEx project
-- `flexExport.includeFootnotes`: boolean - Include footnotes (default: true)
-- `flexExport.includeCrossRefs`: boolean - Include cross-references (default: true)
+- `flexExport.includeFootnotes`: boolean - Include footnotes (default: false)
+- `flexExport.includeCrossRefs`: boolean - Include cross-references (default: false)
+- `flexExport.includeIntro`: boolean - Include introduction markers (default: false)
+- `flexExport.includeRemarks`: boolean - Include remarks (default: false)
+- `flexExport.includeFigures`: boolean - Include figures (default: true)
 - `flexExport.useFullBookName`: boolean - Use "Mark" vs "MRK" in title (default: true)
 - `flexExport.overwriteExisting`: boolean - Overwrite if text exists (default: false)
 
@@ -194,18 +219,25 @@ foreach (var para in paragraphs) {
 
 ## Development Phases
 
-### Pre-MVP: Prove Scripture Access
+### Pre-MVP: Prove Scripture Access (COMPLETED)
 **Goal:** Demonstrate we can read scripture from Paranext PAPI
 
 **Deliverables:**
-- [ ] Bootstrapped extension (via create-paranext-extension)
-- [ ] Command registered: "Export to FLEx"
-- [ ] WebView panel showing:
-  - Current project name
-  - List of available books
-  - Selected book's USJ content (formatted)
+- [x] Bootstrapped extension (via create-paranext-extension)
+- [x] WebView panel showing:
+  - Project selector (ComboBox filtering to editable projects)
+  - Book/chapter range selector (BookChapterControl + end chapter ComboBox)
+  - Content filter checkboxes (footnotes, cross-refs, intro, remarks, figures)
+  - Scripture preview in three views: Formatted, USFM, USJ
 
-**Success Criteria:** Can display any book's content in the WebView
+**Implementation Notes:**
+- Uses `platformScripture.USJ_Chapter` to fetch chapters individually
+- Filters projects using `platform.isEditable` setting to exclude downloaded resources
+- BookChapterControl shows reference with verse (e.g., "Matthew 20:1") - verse cannot be hidden
+- Content filters are all disabled by default (content is excluded unless checked)
+- Introduction filter only available when starting chapter is 1
+
+**Success Criteria:** Can display any chapter range's content in the WebView with filtering
 
 ### MVP Phase 1: Bridge CLI
 **Goal:** Standalone tool that creates FLEx texts
@@ -233,12 +265,12 @@ foreach (var para in paragraphs) {
 **Success Criteria:** User can export a book to FLEx without leaving Paratext
 
 ### Future Enhancements
-- Chapter range selection (not just whole books)
-- "One text per chapter" option
+- "One text per chapter" option (currently exports range as single text)
 - Overwrite confirmation dialog
 - Open FLEx after export
 - Localization (i18n)
 - Linux/macOS support
+- Persist content filter settings between sessions
 
 ## Prerequisites
 
