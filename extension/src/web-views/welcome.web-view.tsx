@@ -637,14 +637,6 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     [includeResources]
   );
 
-  // Passthrough handler for FLEx dropdowns to fix closing behavior
-  const handleFlexDropdownClick = useCallback(
-    (_event: React.MouseEvent) => {
-      // Intentionally empty - just ensures event propagation works correctly
-    },
-    []
-  );
-
   // Handle FLEx project selection
   const handleFlexProjectChange = useCallback(
     (option: FlexProjectOption | undefined) => {
@@ -1473,24 +1465,22 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                 <Label id="flex-project-label" htmlFor="flex-project-selector" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap">
                   {localizedStrings["%flexExport_project%"]}
                 </Label>
-                <div id="flex-project-selector-wrapper" onMouseDown={handleFlexDropdownClick}>
-                  <ComboBox<FlexProjectOption>
-                    id="flex-project-selector"
-                    options={flexProjects}
-                    value={selectedFlexProject}
-                    onChange={handleFlexProjectChange}
-                    getOptionLabel={(option: FlexProjectOption) => option.label}
-                    buttonPlaceholder={isLoadingFlexProjects
-                      ? localizedStrings["%flexExport_loadingFlexProjects%"]
-                      : flexLoadError
-                        ? localizedStrings["%flexExport_flexNotAvailable%"]
-                        : localizedStrings["%flexExport_selectFlexProject%"]}
-                    textPlaceholder={localizedStrings["%flexExport_searchFlexProjects%"]}
-                    commandEmptyMessage={localizedStrings["%flexExport_noFlexProjectsFound%"]}
-                    buttonVariant="outline"
-                    disabled={!!flexLoadError}
-                  />
-                </div>
+                <ComboBox<FlexProjectOption>
+                  id="flex-project-selector"
+                  options={flexProjects}
+                  value={selectedFlexProject}
+                  onChange={handleFlexProjectChange}
+                  getOptionLabel={(option: FlexProjectOption) => option.label}
+                  buttonPlaceholder={isLoadingFlexProjects
+                    ? localizedStrings["%flexExport_loadingFlexProjects%"]
+                    : flexLoadError
+                      ? localizedStrings["%flexExport_flexNotAvailable%"]
+                      : localizedStrings["%flexExport_selectFlexProject%"]}
+                  textPlaceholder={localizedStrings["%flexExport_searchFlexProjects%"]}
+                  commandEmptyMessage={localizedStrings["%flexExport_noFlexProjectsFound%"]}
+                  buttonVariant="outline"
+                  isDisabled={!!flexLoadError}
+                />
               </div>
 
               {/* Writing System Selector */}
@@ -1499,16 +1489,14 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                   <Label id="writing-system-label" htmlFor="writing-system-selector" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap">
                     {localizedStrings["%flexExport_writingSystem%"]}
                   </Label>
-                  <div id="writing-system-selector-wrapper" onMouseDown={handleFlexDropdownClick}>
-                    <ComboBox<WritingSystemOption>
-                      id="writing-system-selector"
-                      options={writingSystemOptions}
-                      value={selectedWritingSystem}
-                      onChange={handleWritingSystemChange}
-                      getOptionLabel={(ws: WritingSystemOption) => ws.label}
-                      buttonVariant="outline"
-                    />
-                  </div>
+                  <ComboBox<WritingSystemOption>
+                    id="writing-system-selector"
+                    options={writingSystemOptions}
+                    value={selectedWritingSystem}
+                    onChange={handleWritingSystemChange}
+                    getOptionLabel={(ws: WritingSystemOption) => ws.label}
+                    buttonVariant="outline"
+                  />
                 </div>
               )}
 
