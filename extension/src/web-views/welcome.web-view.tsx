@@ -1467,19 +1467,14 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                 </Label>
                 <ComboBox<FlexProjectOption>
                   id="flex-project-selector"
-                  options={flexProjects}
+                  options={flexProjects || []}
                   value={selectedFlexProject}
                   onChange={handleFlexProjectChange}
                   getOptionLabel={(option: FlexProjectOption) => option.label}
-                  buttonPlaceholder={isLoadingFlexProjects
-                    ? localizedStrings["%flexExport_loadingFlexProjects%"]
-                    : flexLoadError
-                      ? localizedStrings["%flexExport_flexNotAvailable%"]
-                      : localizedStrings["%flexExport_selectFlexProject%"]}
+                  buttonPlaceholder={localizedStrings["%flexExport_selectFlexProject%"]}
                   textPlaceholder={localizedStrings["%flexExport_searchFlexProjects%"]}
                   commandEmptyMessage={localizedStrings["%flexExport_noFlexProjectsFound%"]}
                   buttonVariant="outline"
-                  isDisabled={!!flexLoadError}
                 />
               </div>
 
@@ -1491,10 +1486,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                   </Label>
                   <ComboBox<WritingSystemOption>
                     id="writing-system-selector"
-                    options={writingSystemOptions}
+                    options={writingSystemOptions || []}
                     value={selectedWritingSystem}
                     onChange={handleWritingSystemChange}
                     getOptionLabel={(ws: WritingSystemOption) => ws.label}
+                    buttonPlaceholder={localizedStrings["%flexExport_writingSystem%"]}
+                    textPlaceholder={localizedStrings["%flexExport_searchWritingSystems%"] || "Search writing systems..."}
+                    commandEmptyMessage={localizedStrings["%flexExport_noWritingSystemsFound%"] || "No writing systems found"}
                     buttonVariant="outline"
                   />
                 </div>
