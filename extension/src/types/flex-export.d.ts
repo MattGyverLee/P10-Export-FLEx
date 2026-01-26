@@ -65,22 +65,6 @@ declare module 'papi-shared-types' {
     ) => Promise<CreateTextResult>;
   }
 
-  export interface ProjectSettingTypes {
-    /** Name of the FLEx project to export to (persisted per Paratext project) */
-    'flexExport.flexProjectName': string;
-    /** Writing system code to use for export (persisted per Paratext project) */
-    'flexExport.writingSystemCode': string;
-    /** Whether to overwrite existing texts (persisted per Paratext project) */
-    'flexExport.overwriteEnabled': boolean;
-    /** Whether to include footnotes in export (persisted per Paratext project) */
-    'flexExport.includeFootnotes': boolean;
-    /** Whether to include cross references in export (persisted per Paratext project) */
-    'flexExport.includeCrossRefs': boolean;
-    /** Whether to include introduction in export (persisted per Paratext project) */
-    'flexExport.includeIntro': boolean;
-    /** Whether to include remarks in export (persisted per Paratext project) */
-    'flexExport.includeRemarks': boolean;
-    /** Whether to include figures in export (persisted per Paratext project) */
-    'flexExport.includeFigures': boolean;
-  }
+  // Extension preferences are stored in WebView state, not project settings
+  // This avoids polluting shared project settings with extension-specific data
 }

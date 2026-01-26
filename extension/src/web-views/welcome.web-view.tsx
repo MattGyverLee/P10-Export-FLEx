@@ -119,6 +119,7 @@ const LOCALIZED_STRING_KEYS = [
 globalThis.webViewComponent = function ExportToFlexWebView({
   projectId,
   updateWebViewDefinition,
+  useWebViewState,
   state,
 }: WebViewProps) {
   // Localized strings
@@ -138,61 +139,81 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // End chapter for range selection (defaults to start chapter)
   const [endChapter, setEndChapter] = useState(initialScrRef?.chapterNum || 1);
 
-  // Project settings - persisted per Paratext project
-  const [savedFlexProjectName, setSavedFlexProjectName] = useProjectSetting(
-    projectId ?? undefined,
-    "flexExport.flexProjectName",
-    ""
-  );
-  const [savedWritingSystemCode, setSavedWritingSystemCode] = useProjectSetting(
-    projectId ?? undefined,
-    "flexExport.writingSystemCode",
-    ""
-  );
-  const [savedOverwriteEnabled, setSavedOverwriteEnabled] = useProjectSetting(
-    projectId ?? undefined,
-    "flexExport.overwriteEnabled",
-    false
-  );
-  const [savedIncludeFootnotes, setSavedIncludeFootnotes] = useProjectSetting(
-    projectId ?? undefined,
-    "flexExport.includeFootnotes",
-    false
-  );
-  const [savedIncludeCrossRefs, setSavedIncludeCrossRefs] = useProjectSetting(
-    projectId ?? undefined,
-    "flexExport.includeCrossRefs",
-    false
-  );
-  const [savedIncludeIntro, setSavedIncludeIntro] = useProjectSetting(
-    projectId ?? undefined,
-    "flexExport.includeIntro",
-    false
-  );
-  const [savedIncludeRemarks, setSavedIncludeRemarks] = useProjectSetting(
-    projectId ?? undefined,
-    "flexExport.includeRemarks",
-    false
-  );
-  const [savedIncludeFigures, setSavedIncludeFigures] = useProjectSetting(
-    projectId ?? undefined,
-    "flexExport.includeFigures",
-    true
+  // Per-project settings storage - keyed by Paratext project ID
+  // This stores a map of project IDs to their export settings
+  interface ProjectExportSettings {
+    flexProjectName: string;
+    writingSystemCode: string;
+    overwriteEnabled: boolean;
+    includeFootnotes: boolean;
+    includeCrossRefs: boolean;
+    includeIntro: boolean;
+    includeRemarks: boolean;
+    includeFigures: boolean;
+  }
+
+  const defaultSettings: ProjectExportSettings = {
+    flexProjectName: "",
+    writingSystemCode: "",
+    overwriteEnabled: false,
+    includeFootnotes: false,
+    includeCrossRefs: false,
+    includeIntro: false,
+    includeRemarks: false,
+    includeFigures: true,
+  };
+
+  // Store all project settings in a single WebView state map
+  const [allProjectSettings, setAllProjectSettings] = useWebViewState<Record<string, ProjectExportSettings>>(
+    "projectSettings",
+    {}
   );
 
-  // Content filter toggles - use persisted values (handle potential errors from useProjectSetting)
-  const includeFootnotes = isPlatformError(savedIncludeFootnotes) ? false : savedIncludeFootnotes;
-  const includeCrossRefs = isPlatformError(savedIncludeCrossRefs) ? false : savedIncludeCrossRefs;
-  const includeIntro = isPlatformError(savedIncludeIntro) ? false : savedIncludeIntro;
-  const includeRemarks = isPlatformError(savedIncludeRemarks) ? false : savedIncludeRemarks;
-  const includeFigures = isPlatformError(savedIncludeFigures) ? true : savedIncludeFigures;
+  // Get settings for the current project (or defaults if none saved)
+  const currentSettings = useMemo(() => {
+    if (!projectId) return defaultSettings;
+    return allProjectSettings[projectId] || defaultSettings;
+  }, [projectId, allProjectSettings]);
 
-  // Setter functions that persist to project settings
-  const setIncludeFootnotes = useCallback((value: boolean) => setSavedIncludeFootnotes(value), [setSavedIncludeFootnotes]);
-  const setIncludeCrossRefs = useCallback((value: boolean) => setSavedIncludeCrossRefs(value), [setSavedIncludeCrossRefs]);
-  const setIncludeIntro = useCallback((value: boolean) => setSavedIncludeIntro(value), [setSavedIncludeIntro]);
-  const setIncludeRemarks = useCallback((value: boolean) => setSavedIncludeRemarks(value), [setSavedIncludeRemarks]);
-  const setIncludeFigures = useCallback((value: boolean) => setSavedIncludeFigures(value), [setSavedIncludeFigures]);
+  // Helper to update a single setting for the current project
+  const updateSetting = useCallback(<K extends keyof ProjectExportSettings>(
+    key: K,
+    value: ProjectExportSettings[K]
+  ) => {
+    if (!projectId) return;
+    setAllProjectSettings((prev: Record<string, ProjectExportSettings>) => ({
+      ...prev,
+      [projectId]: {
+        ...(prev[projectId] || defaultSettings),
+        [key]: value,
+      },
+    }));
+  }, [projectId, setAllProjectSettings]);
+
+  // Convenience accessors for individual settings
+  const savedFlexProjectName = currentSettings.flexProjectName;
+  const setSavedFlexProjectName = useCallback((v: string) => updateSetting("flexProjectName", v), [updateSetting]);
+
+  const savedWritingSystemCode = currentSettings.writingSystemCode;
+  const setSavedWritingSystemCode = useCallback((v: string) => updateSetting("writingSystemCode", v), [updateSetting]);
+
+  const overwriteEnabled = currentSettings.overwriteEnabled;
+  const setOverwriteEnabled = useCallback((v: boolean) => updateSetting("overwriteEnabled", v), [updateSetting]);
+
+  const includeFootnotes = currentSettings.includeFootnotes;
+  const setIncludeFootnotes = useCallback((v: boolean) => updateSetting("includeFootnotes", v), [updateSetting]);
+
+  const includeCrossRefs = currentSettings.includeCrossRefs;
+  const setIncludeCrossRefs = useCallback((v: boolean) => updateSetting("includeCrossRefs", v), [updateSetting]);
+
+  const includeIntro = currentSettings.includeIntro;
+  const setIncludeIntro = useCallback((v: boolean) => updateSetting("includeIntro", v), [updateSetting]);
+
+  const includeRemarks = currentSettings.includeRemarks;
+  const setIncludeRemarks = useCallback((v: boolean) => updateSetting("includeRemarks", v), [updateSetting]);
+
+  const includeFigures = currentSettings.includeFigures;
+  const setIncludeFigures = useCallback((v: boolean) => updateSetting("includeFigures", v), [updateSetting]);
 
   // FLEx project state
   const [flexProjects, setFlexProjects] = useState<FlexProjectOption[]>([]);
@@ -204,10 +225,8 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // Writing system state
   const [selectedWritingSystem, setSelectedWritingSystem] = useState<WritingSystemOption | undefined>();
 
-  // Text name and overwrite state
+  // Text name and overwrite confirmation state
   const [textName, setTextName] = useState("");
-  const overwriteEnabled = isPlatformError(savedOverwriteEnabled) ? false : savedOverwriteEnabled;
-  const setOverwriteEnabled = useCallback((value: boolean) => setSavedOverwriteEnabled(value), [setSavedOverwriteEnabled]);
   const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false);
 
   // Export state
@@ -551,9 +570,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   const [textDirectionSetting] = useProjectSetting(projectId ?? undefined, "platform.textDirection", "");
   const isRtl = textDirectionSetting === "rtl";
 
-  // Get project font family for preview (but not size - user can zoom the whole window)
-  const [projectFont] = useProjectSetting(projectId ?? undefined, "DefaultFont", "");
-  const fontFamily = isPlatformError(projectFont) ? undefined : projectFont || undefined;
+  // Note: Paratext 10 doesn't have font settings yet - using default fonts for preview
 
   // USJ node type interface
   interface UsjNode {
@@ -1334,9 +1351,6 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                 id="preview-formatted"
                 className="tw-leading-relaxed tw-text-foreground"
                 dir={isRtl ? "rtl" : "ltr"}
-                style={{
-                  fontFamily: fontFamily || undefined,
-                }}
               >
                 {formattedPreview}
               </div>
@@ -1344,14 +1358,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             {viewMode === "usfm" && (
               <pre
                 id="preview-usfm"
-                className="tw-text-foreground"
+                className="tw-text-foreground tw-font-mono"
                 dir={isRtl ? "rtl" : "ltr"}
                 style={{
                   whiteSpace: "pre-wrap",
                   wordWrap: "break-word",
                   overflowWrap: "break-word",
                   textAlign: isRtl ? "right" : "left",
-                  fontFamily: fontFamily || "monospace",
                 }}
               >
                 {usfmText}
