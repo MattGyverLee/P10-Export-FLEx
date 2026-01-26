@@ -640,10 +640,12 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // Handle FLEx project selection
   const handleFlexProjectChange = useCallback(
     (option: FlexProjectOption | undefined) => {
+      console.log('[FLEx Dropdown] handleFlexProjectChange called with:', option);
       setSelectedFlexProject(option);
       setExportStatus(undefined);
       // Persist the selection to project settings
       setSavedFlexProjectName(option?.name || "");
+      console.log('[FLEx Dropdown] State updates queued');
     },
     [setSavedFlexProjectName]
   );
@@ -651,9 +653,11 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // Handle writing system selection
   const handleWritingSystemChange = useCallback(
     (option: WritingSystemOption | undefined) => {
+      console.log('[Writing System Dropdown] handleWritingSystemChange called with:', option);
       setSelectedWritingSystem(option);
       // Persist the selection to project settings
       setSavedWritingSystemCode(option?.code || "");
+      console.log('[Writing System Dropdown] State updates queued');
     },
     [setSavedWritingSystemCode]
   );
@@ -670,6 +674,16 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       };
     });
   }, [flexProjectDetails, localizedStrings]);
+
+  // Debug: Log when FLEx dropdown state changes
+  useEffect(() => {
+    console.log('[DEBUG] Component render - FLEx state:', {
+      selectedFlexProject,
+      flexProjects: flexProjects.length,
+      selectedWritingSystem,
+      writingSystemOptions: writingSystemOptions.length,
+    });
+  }, [selectedFlexProject, flexProjects, selectedWritingSystem, writingSystemOptions]);
 
   // Get text direction setting for RTL support
   const [textDirectionSetting] = useProjectSetting(projectId ?? undefined, "platform.textDirection", "");
