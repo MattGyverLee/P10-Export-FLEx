@@ -73,6 +73,41 @@ namespace FlexTextBridge.Services
         }
 
         /// <summary>
+        /// Find the next available numbered version of a text name.
+        /// If "MyText" exists, returns "MyText (2)".
+        /// If "MyText", "MyText (2)", "MyText (3)" exist, returns "MyText (4)".
+        /// </summary>
+        public string FindNextAvailableName(string baseName)
+        {
+            // Remove any existing numbering from the base name
+            var cleanName = System.Text.RegularExpressions.Regex.Replace(baseName, @"\s*\(\d+\)$", "");
+
+            var textRepo = _cache.ServiceLocator.GetInstance<ITextRepository>();
+            var allTexts = textRepo.AllInstances()
+                .Select(t => t.Name.get_String(_cache.DefaultAnalWs)?.Text)
+                .Where(name => !string.IsNullOrEmpty(name))
+                .ToList();
+
+            // Check if base name exists
+            if (!allTexts.Contains(cleanName))
+            {
+                return cleanName;
+            }
+
+            // Find all numbered versions
+            var numberPattern = new System.Text.RegularExpressions.Regex($@"^{System.Text.RegularExpressions.Regex.Escape(cleanName)}\s*\((\d+)\)$");
+            var existingNumbers = allTexts
+                .Select(name => numberPattern.Match(name))
+                .Where(match => match.Success)
+                .Select(match => int.Parse(match.Groups[1].Value))
+                .ToList();
+
+            // Find the highest number and add 1, or start at 2
+            var nextNumber = existingNumbers.Any() ? existingNumbers.Max() + 1 : 2;
+            return $"{cleanName} ({nextNumber})";
+        }
+
+        /// <summary>
         /// Find a text by name.
         /// </summary>
         private IText FindText(string textName)
@@ -89,8 +124,8 @@ namespace FlexTextBridge.Services
         /// <param name="paragraphs">List of paragraphs with tagged segments</param>
         /// <param name="overwrite">If true, delete existing text with same name</param>
         /// <param name="usedVernacularWs">Output: the vernacular WS code that was used</param>
-        /// <returns>Number of paragraphs created</returns>
-        public int CreateText(string textName, List<Paragraph> paragraphs, bool overwrite, out string usedVernacularWs)
+        /// <returns>Tuple of (paragraph count, text GUID)</returns>
+        public (int paragraphCount, Guid textGuid) CreateText(string textName, List<Paragraph> paragraphs, bool overwrite, out string usedVernacularWs)
         {
             if (string.IsNullOrEmpty(textName))
                 throw new ArgumentException("Text name cannot be empty", nameof(textName));
@@ -125,6 +160,7 @@ namespace FlexTextBridge.Services
                 // In newer LibLCM versions, texts are automatically added to the project
                 // when created via the factory (they're unowned now)
                 var text = textFactory.Create();
+                var textGuid = text.Guid;
 
                 // Set text name (analysis WS)
                 text.Name.set_String(analWs, TsStringUtils.MakeString(textName, analWs));
@@ -170,7 +206,7 @@ namespace FlexTextBridge.Services
                 }
 
                 undoHelper.RollBack = false; // Commit the transaction
-                return paragraphCount;
+                return (paragraphCount, textGuid);
             }
         }
 

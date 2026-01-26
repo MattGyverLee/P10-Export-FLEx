@@ -93,6 +93,9 @@ namespace FlexTextBridge
             bool overwrite = false;
             bool listProjects = false;
             bool projectInfo = false;
+            bool checkText = false;
+            bool checkFlexStatus = false;
+            bool getSafeTarget = false;
             bool showVersion = false;
             bool showHelp = false;
 
@@ -108,6 +111,19 @@ namespace FlexTextBridge
                     case "--project-info":
                     case "-i":
                         projectInfo = true;
+                        break;
+
+                    case "--check-text":
+                    case "-c":
+                        checkText = true;
+                        break;
+
+                    case "--check-flex-status":
+                        checkFlexStatus = true;
+                        break;
+
+                    case "--get-safe-target":
+                        getSafeTarget = true;
                         break;
 
                     case "--project":
@@ -165,6 +181,24 @@ namespace FlexTextBridge
                 return command.Execute();
             }
 
+            if (checkText && !string.IsNullOrEmpty(project) && !string.IsNullOrEmpty(title))
+            {
+                var command = new CheckTextCommand(project, title);
+                return command.Execute();
+            }
+
+            if (checkFlexStatus && !string.IsNullOrEmpty(project))
+            {
+                var command = new CheckFlexStatusCommand(project);
+                return command.Execute();
+            }
+
+            if (getSafeTarget && !string.IsNullOrEmpty(project) && !string.IsNullOrEmpty(title))
+            {
+                var command = new GetSafeNavigationTargetCommand(project, title);
+                return command.Execute();
+            }
+
             if (projectInfo && !string.IsNullOrEmpty(project))
             {
                 var command = new ProjectInfoCommand(project);
@@ -189,21 +223,28 @@ namespace FlexTextBridge
             Console.Error.WriteLine("Usage:");
             Console.Error.WriteLine("  FlexTextBridge --list-projects");
             Console.Error.WriteLine("  FlexTextBridge --project-info --project <name>");
+            Console.Error.WriteLine("  FlexTextBridge --check-text --project <name> --title <title>");
+            Console.Error.WriteLine("  FlexTextBridge --check-flex-status --project <name>");
+            Console.Error.WriteLine("  FlexTextBridge --get-safe-target --project <name> --title <title>");
             Console.Error.WriteLine("  FlexTextBridge --project <name> --title <title> [--vernacular-ws <code>] [--overwrite] < scripture.json");
             Console.Error.WriteLine();
             Console.Error.WriteLine("Options:");
-            Console.Error.WriteLine("  -l, --list-projects       List all FLEx projects on the system");
-            Console.Error.WriteLine("  -i, --project-info        Get detailed info for a project (requires --project)");
-            Console.Error.WriteLine("  -p, --project <name>      Name of the FLEx project to use");
-            Console.Error.WriteLine("  -t, --title <title>       Title for the new text (e.g., 'Mark 01-03')");
-            Console.Error.WriteLine("  -w, --vernacular-ws <ws>  Vernacular writing system code (defaults to project default)");
-            Console.Error.WriteLine("  -o, --overwrite           Overwrite existing text with the same name");
-            Console.Error.WriteLine("  -v, --version             Display version information");
-            Console.Error.WriteLine("  -h, --help                Show this help message");
+            Console.Error.WriteLine("  -l, --list-projects          List all FLEx projects on the system");
+            Console.Error.WriteLine("  -i, --project-info           Get detailed info for a project (requires --project)");
+            Console.Error.WriteLine("  -c, --check-text             Check if text name exists and get suggested alternative");
+            Console.Error.WriteLine("      --check-flex-status      Check if FLEx is running and if project sharing is enabled");
+            Console.Error.WriteLine("      --get-safe-target        Find safe navigation target for overwrite workflow");
+            Console.Error.WriteLine("  -p, --project <name>         Name of the FLEx project to use");
+            Console.Error.WriteLine("  -t, --title <title>          Title for the new text (e.g., 'Mark 01-03')");
+            Console.Error.WriteLine("  -w, --vernacular-ws <ws>     Vernacular writing system code (defaults to project default)");
+            Console.Error.WriteLine("  -o, --overwrite              Overwrite existing text with the same name");
+            Console.Error.WriteLine("  -v, --version                Display version information");
+            Console.Error.WriteLine("  -h, --help                   Show this help message");
             Console.Error.WriteLine();
             Console.Error.WriteLine("Examples:");
             Console.Error.WriteLine("  FlexTextBridge --list-projects");
             Console.Error.WriteLine("  FlexTextBridge --project-info --project MyProject");
+            Console.Error.WriteLine("  FlexTextBridge --check-text --project MyProject --title \"Mark 01\"");
             Console.Error.WriteLine("  type scripture.json | FlexTextBridge --project MyProject --title \"Genesis 01\"");
             Console.Error.WriteLine("  type scripture.json | FlexTextBridge --project MyProject --title \"Genesis 01\" --vernacular-ws arz");
         }

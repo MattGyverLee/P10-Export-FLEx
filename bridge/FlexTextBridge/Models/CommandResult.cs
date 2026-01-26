@@ -40,6 +40,9 @@ namespace FlexTextBridge.Models
         [JsonProperty("textName", NullValueHandling = NullValueHandling.Ignore)]
         public string TextName { get; set; }
 
+        [JsonProperty("textGuid", NullValueHandling = NullValueHandling.Ignore)]
+        public string TextGuid { get; set; }
+
         [JsonProperty("paragraphCount", NullValueHandling = NullValueHandling.Ignore)]
         public int? ParagraphCount { get; set; }
 
@@ -48,6 +51,45 @@ namespace FlexTextBridge.Models
 
         [JsonProperty("vernacularWs", NullValueHandling = NullValueHandling.Ignore)]
         public string VernacularWs { get; set; }
+
+        [JsonProperty("suggestedName", NullValueHandling = NullValueHandling.Ignore)]
+        public string SuggestedName { get; set; }
+    }
+
+    /// <summary>
+    /// Result for the check text name command.
+    /// </summary>
+    public class CheckTextResult : CommandResult
+    {
+        [JsonProperty("exists")]
+        public bool Exists { get; set; }
+
+        [JsonProperty("suggestedName", NullValueHandling = NullValueHandling.Ignore)]
+        public string SuggestedName { get; set; }
+    }
+
+    /// <summary>
+    /// Status of FLEx process and project sharing.
+    /// </summary>
+    public class FlexStatusResult : CommandResult
+    {
+        [JsonProperty("isRunning")]
+        public bool IsRunning { get; set; }
+
+        [JsonProperty("sharingEnabled")]
+        public bool SharingEnabled { get; set; }
+    }
+
+    /// <summary>
+    /// Navigation target for safe redirect.
+    /// </summary>
+    public class NavigationTargetResult : CommandResult
+    {
+        [JsonProperty("guid", NullValueHandling = NullValueHandling.Ignore)]
+        public string Guid { get; set; }
+
+        [JsonProperty("tool")]
+        public string Tool { get; set; }
     }
 
     /// <summary>

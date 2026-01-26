@@ -15,7 +15,9 @@
       "Bash(powershell -Command \"Push-Location ''d:\\\\Github\\\\P10-Export-FLEx\\\\bridge\\\\FlexTextBridge''; dotnet build -c Release -v minimal 2>&1; Pop-Location\")",
       "Bash(npm run build:*)",
       "Bash(node:*)",
-      "Bash(npm run lint)"
+      "Bash(npm run lint)",
+      "Bash(./FlexTextBridge.exe:*)",
+      "Bash(start \"silfw://localhost/link?database%3dTest%26tool%3dinterlinearEdit%26guid%3d4baddaa8-27ff-40c4-b027-d4009c5d8799%26tag%3d\")"
     ]
   }
 }

@@ -23,6 +23,68 @@ interface ExportToFlexWebViewOptions extends GetWebViewOptions {
   initialScrRef?: SerializedVerseRef;
 }
 
+/** All localization keys used in the WebView */
+const LOCALIZATION_KEYS = [
+  "%flexExport_title%",
+  "%flexExport_paratextSettings%",
+  "%flexExport_flexSettings%",
+  "%flexExport_project%",
+  "%flexExport_paratextProject%",
+  "%flexExport_selectProject%",
+  "%flexExport_searchProjects%",
+  "%flexExport_noProjectsFound%",
+  "%flexExport_noProjectSelected%",
+  "%flexExport_selectBookChapter%",
+  "%flexExport_toChapter%",
+  "%flexExport_endChapter%",
+  "%flexExport_includeInExport%",
+  "%flexExport_footnotes%",
+  "%flexExport_crossReferences%",
+  "%flexExport_introduction%",
+  "%flexExport_remarks%",
+  "%flexExport_figures%",
+  "%flexExport_formatted%",
+  "%flexExport_usfm%",
+  "%flexExport_usjData%",
+  "%flexExport_scripturePreview%",
+  "%flexExport_usfmPreview%",
+  "%flexExport_usjJsonData%",
+  "%flexExport_loading%",
+  "%flexExport_noScriptureData%",
+  "%flexExport_noUsjData%",
+  "%flexExport_loadingScripture%",
+  "%flexExport_chapter%",
+  "%flexExport_remark%",
+  "%flexExport_figure%",
+  "%flexExport_footnote%",
+  "%flexExport_flexProject%",
+  "%flexExport_selectFlexProject%",
+  "%flexExport_searchFlexProjects%",
+  "%flexExport_noFlexProjectsFound%",
+  "%flexExport_loadingFlexProjects%",
+  "%flexExport_writingSystem%",
+  "%flexExport_defaultWritingSystem%",
+  "%flexExport_textName%",
+  "%flexExport_textNamePlaceholder%",
+  "%flexExport_overwrite%",
+  "%flexExport_overwriteConfirmTitle%",
+  "%flexExport_overwriteConfirmMessage%",
+  "%flexExport_overwriteConfirmYes%",
+  "%flexExport_overwriteConfirmNo%",
+  "%flexExport_export%",
+  "%flexExport_exporting%",
+  "%flexExport_exportSuccess%",
+  "%flexExport_exportFailed%",
+  "%flexExport_windowsOnly%",
+  "%flexExport_noFlexProjectSelected%",
+  "%flexExport_flexNotFound%",
+  "%flexExport_flexLoadError%",
+  "%flexExport_flexNotAvailable%",
+  "%flexExport_renameConfirmMessage%",
+  "%flexExport_renameConfirmYes%",
+  "%flexExport_renameConfirmNo%",
+];
+
 /**
  * WebView provider that provides the welcome WebView when requested
  */
@@ -42,6 +104,28 @@ const welcomeWebViewProvider: IWebViewProvider = {
     // Use initial scripture reference from options, falling back to saved state
     const initialScrRef = getWebViewOptions.initialScrRef || savedWebView.state?.initialScrRef;
 
+    // Pre-load localized strings to avoid flash of % placeholders
+    // Use a short timeout to avoid blocking WebView opening
+    let preloadedStrings: Record<string, string> | undefined;
+    try {
+      const localizationPromise = (async () => {
+        const localizationService = await papi.localization;
+        return await localizationService.getLocalizedStrings({
+          localizeKeys: LOCALIZATION_KEYS,
+        });
+      })();
+
+      // Timeout after 500ms to avoid blocking
+      const timeoutPromise = new Promise<undefined>((resolve) =>
+        setTimeout(() => resolve(undefined), 500)
+      );
+
+      preloadedStrings = await Promise.race([localizationPromise, timeoutPromise]);
+    } catch (error) {
+      logger.warn("Failed to preload localized strings:", error);
+      // Will fall back to English in the WebView
+    }
+
     return {
       ...savedWebView,
       title: "%flexExport_tabTitle%",
@@ -50,6 +134,7 @@ const welcomeWebViewProvider: IWebViewProvider = {
       state: {
         ...savedWebView.state,
         initialScrRef,
+        preloadedStrings,
       },
     };
   },
@@ -175,6 +260,87 @@ export async function activate(context: ExecutionActivationContext) {
     }
   );
 
+  // Register command to check if text name exists and get suggested name
+  const checkTextNamePromise = papi.commands.registerCommand(
+    "flexExport.checkTextName",
+    async (
+      flexProjectName: string,
+      textTitle: string
+    ): Promise<{ exists: boolean; suggestedName?: string }> => {
+      if (!flexBridge) {
+        return { exists: false };
+      }
+
+      const result = await flexBridge.checkTextName(flexProjectName, textTitle);
+      return result;
+    }
+  );
+
+  // Register command to check FLEx status
+  const checkFlexStatusPromise = papi.commands.registerCommand(
+    "flexExport.checkFlexStatus",
+    async (
+      flexProjectName: string
+    ): Promise<{ isRunning: boolean; sharingEnabled: boolean }> => {
+      if (!flexBridge) {
+        return { isRunning: false, sharingEnabled: false };
+      }
+
+      const result = await flexBridge.checkFlexStatus(flexProjectName);
+      return result;
+    }
+  );
+
+  // Register command to get safe navigation target
+  const getSafeNavigationTargetPromise = papi.commands.registerCommand(
+    "flexExport.getSafeNavigationTarget",
+    async (
+      flexProjectName: string,
+      textTitle: string
+    ): Promise<{ guid?: string; tool: string }> => {
+      if (!flexBridge) {
+        return { tool: "default" };
+      }
+
+      const result = await flexBridge.getSafeNavigationTarget(flexProjectName, textTitle);
+      return result;
+    }
+  );
+
+  // Register command to navigate FLEx using deep link
+  const navigateFlexPromise = papi.commands.registerCommand(
+    "flexExport.navigateFlex",
+    async (deepLinkUrl: string): Promise<void> => {
+      const { createProcess } = context.elevatedPrivileges;
+      if (!createProcess) {
+        throw new Error("createProcess privilege not available");
+      }
+
+      // Use Windows cmd to open the deep link URL
+      // cmd /c start "" "url" - the empty "" is for the window title
+      return new Promise((resolve, reject) => {
+        const process = createProcess.spawn(
+          context.executionToken,
+          "cmd",
+          ["/c", "start", "", deepLinkUrl],
+          { stdio: "ignore" }
+        );
+
+        process.on("error", (err: Error) => {
+          reject(err);
+        });
+
+        process.on("close", (code: number | null) => {
+          if (code === 0 || code === null) {
+            resolve();
+          } else {
+            reject(new Error(`Process exited with code ${code}`));
+          }
+        });
+      });
+    }
+  );
+
   // Register command to export text to FLEx
   const exportToFlexPromise = papi.commands.registerCommand(
     "flexExport.exportToFlex",
@@ -209,6 +375,10 @@ export async function activate(context: ExecutionActivationContext) {
   context.registrations.add(await openExportDialogPromise);
   context.registrations.add(await listFlexProjectsPromise);
   context.registrations.add(await getFlexProjectInfoPromise);
+  context.registrations.add(await checkTextNamePromise);
+  context.registrations.add(await checkFlexStatusPromise);
+  context.registrations.add(await getSafeNavigationTargetPromise);
+  context.registrations.add(await navigateFlexPromise);
   context.registrations.add(await exportToFlexPromise);
 
   logger.info("flex-export extension finished activating!");

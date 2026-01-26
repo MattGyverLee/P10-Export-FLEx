@@ -204,6 +204,75 @@ export class FlexBridgeService {
   }
 
   /**
+   * Check if a text name exists in a FLEx project and get suggested alternative
+   */
+  async checkTextName(projectName: string, textTitle: string): Promise<{ exists: boolean; suggestedName?: string }> {
+    try {
+      const args = ["--check-text", "--project", projectName, "--title", textTitle];
+      const output = await this.runBridge(args);
+      const result = JSON.parse(output) as { success: boolean; exists: boolean; suggestedName?: string };
+
+      if (result.success) {
+        return {
+          exists: result.exists,
+          suggestedName: result.suggestedName,
+        };
+      }
+
+      return { exists: false };
+    } catch (error) {
+      // On error, assume text doesn't exist
+      return { exists: false };
+    }
+  }
+
+  /**
+   * Check if FLEx is running and if project sharing is enabled
+   */
+  async checkFlexStatus(projectName: string): Promise<{ isRunning: boolean; sharingEnabled: boolean }> {
+    try {
+      const args = ["--check-flex-status", "--project", projectName];
+      const output = await this.runBridge(args);
+      const result = JSON.parse(output) as { success: boolean; isRunning: boolean; sharingEnabled: boolean };
+
+      if (result.success) {
+        return {
+          isRunning: result.isRunning,
+          sharingEnabled: result.sharingEnabled,
+        };
+      }
+
+      return { isRunning: false, sharingEnabled: false };
+    } catch (error) {
+      // On error, assume FLEx is not running
+      return { isRunning: false, sharingEnabled: false };
+    }
+  }
+
+  /**
+   * Find a safe navigation target to redirect FLEx away from the text being overwritten
+   */
+  async getSafeNavigationTarget(projectName: string, textTitle: string): Promise<{ guid?: string; tool: string }> {
+    try {
+      const args = ["--get-safe-target", "--project", projectName, "--title", textTitle];
+      const output = await this.runBridge(args);
+      const result = JSON.parse(output) as { success: boolean; guid?: string; tool: string };
+
+      if (result.success) {
+        return {
+          guid: result.guid,
+          tool: result.tool,
+        };
+      }
+
+      return { tool: "default" };
+    } catch (error) {
+      // On error, return default navigation
+      return { tool: "default" };
+    }
+  }
+
+  /**
    * Run the bridge CLI with the given arguments
    * @param args Command line arguments
    * @param stdin Optional data to send to stdin

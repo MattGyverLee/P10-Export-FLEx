@@ -86,14 +86,20 @@ namespace FlexTextBridge.Commands
                 // Check if text exists
                 if (textService.TextExists(_textTitle) && !_overwrite)
                 {
-                    return OutputError($"Text '{_textTitle}' already exists. Use --overwrite to replace.", ErrorCodes.TextExists);
+                    // Find next available name
+                    var suggestedName = textService.FindNextAvailableName(_textTitle);
+                    return OutputError(
+                        $"Text '{_textTitle}' already exists. Use --overwrite to replace.",
+                        ErrorCodes.TextExists,
+                        new { suggestedName });
                 }
 
                 int paragraphCount;
+                Guid textGuid;
                 string usedVernacularWs;
                 try
                 {
-                    paragraphCount = textService.CreateText(_textTitle, paragraphs, _overwrite, out usedVernacularWs);
+                    (paragraphCount, textGuid) = textService.CreateText(_textTitle, paragraphs, _overwrite, out usedVernacularWs);
 
                     // Save changes to disk - this is critical!
                     projectService.Save();
@@ -108,6 +114,7 @@ namespace FlexTextBridge.Commands
                 {
                     Success = true,
                     TextName = _textTitle,
+                    TextGuid = textGuid.ToString(),
                     ParagraphCount = paragraphCount,
                     ProjectPath = Path.Combine(projectService.GetProjectsDirectory(), _projectName),
                     VernacularWs = usedVernacularWs
@@ -130,7 +137,7 @@ namespace FlexTextBridge.Commands
             }
         }
 
-        private int OutputError(string message, string errorCode)
+        private int OutputError(string message, string errorCode, object additionalData = null)
         {
             var result = new CreateTextResult
             {
@@ -138,6 +145,16 @@ namespace FlexTextBridge.Commands
                 Error = message,
                 ErrorCode = errorCode
             };
+
+            // Add additional data if provided (e.g., suggestedName)
+            if (additionalData != null)
+            {
+                var suggestedNameProp = additionalData.GetType().GetProperty("suggestedName");
+                if (suggestedNameProp != null)
+                {
+                    result.SuggestedName = suggestedNameProp.GetValue(additionalData) as string;
+                }
+            }
 
             Console.Error.WriteLine(JsonConvert.SerializeObject(result, Formatting.Indented));
             return 1;

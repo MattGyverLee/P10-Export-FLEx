@@ -6,6 +6,45 @@ import { BookChapterControl, Button, Checkbox, ComboBox, Input, Label, Switch } 
 import { isPlatformError, getChaptersForBook } from "platform-bible-utils";
 import { Canon, SerializedVerseRef } from "@sillsdev/scripture";
 
+// Simple Modal Dialog Component (Dialog not yet exported from platform-bible-react)
+function Modal({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
+  if (!open) return null;
+
+  return (
+    <div
+      className="tw-fixed tw-inset-0 tw-z-50 tw-flex tw-items-center tw-justify-center tw-bg-black/50"
+      onClick={onClose}
+    >
+      <div
+        className="tw-relative tw-w-full tw-max-w-lg tw-bg-background tw-border tw-border-border tw-rounded-lg tw-shadow-xl tw-p-6 tw-animate-in tw-fade-in-0 tw-zoom-in-95"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ModalHeader({ children }: { children: React.ReactNode }) {
+  return <div className="tw-mb-4">{children}</div>;
+}
+
+function ModalTitle({ children }: { children: React.ReactNode }) {
+  return <h2 className="tw-text-lg tw-font-semibold tw-leading-none tw-tracking-tight">{children}</h2>;
+}
+
+function ModalDescription({ children }: { children: React.ReactNode }) {
+  return <p className="tw-text-sm tw-text-muted-foreground tw-mt-2">{children}</p>;
+}
+
+function ModalFooter({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="tw-flex tw-flex-col-reverse sm:tw-flex-row sm:tw-justify-end sm:tw-space-x-2 tw-mt-6 tw-gap-2">
+      {children}
+    </div>
+  );
+}
+
 // FLEx project types (matching bridge service)
 interface FlexProjectInfo {
   name: string;
@@ -57,64 +96,70 @@ const isRtlLanguage = (langCode: string | undefined): boolean => {
   return RTL_LANGUAGES.includes(baseCode);
 };
 
+// English fallback strings for instant rendering (localization hydrates in background)
+const ENGLISH_FALLBACKS: Record<string, string> = {
+  "%flexExport_title%": "Export to FLEx",
+  "%flexExport_paratextSettings%": "Paratext Settings",
+  "%flexExport_flexSettings%": "FLEx Settings",
+  "%flexExport_project%": "Project",
+  "%flexExport_paratextProject%": "Paratext Project",
+  "%flexExport_selectProject%": "Select project",
+  "%flexExport_searchProjects%": "Search projects...",
+  "%flexExport_noProjectsFound%": "No projects found",
+  "%flexExport_noProjectSelected%": "No project selected",
+  "%flexExport_selectBookChapter%": "Select Book & Chapter",
+  "%flexExport_toChapter%": "to",
+  "%flexExport_endChapter%": "End chapter",
+  "%flexExport_includeInExport%": "Include in Export",
+  "%flexExport_footnotes%": "Footnotes",
+  "%flexExport_crossReferences%": "Cross References",
+  "%flexExport_introduction%": "Introduction",
+  "%flexExport_remarks%": "Remarks",
+  "%flexExport_figures%": "Figures",
+  "%flexExport_formatted%": "Formatted",
+  "%flexExport_usfm%": "USFM",
+  "%flexExport_usjData%": "USJ Data",
+  "%flexExport_scripturePreview%": "Scripture Preview",
+  "%flexExport_usfmPreview%": "USFM Preview",
+  "%flexExport_usjJsonData%": "USJ JSON Data",
+  "%flexExport_loading%": "Loading...",
+  "%flexExport_noScriptureData%": "No scripture data available",
+  "%flexExport_noUsjData%": "No USJ data available",
+  "%flexExport_loadingScripture%": "Loading scripture...",
+  "%flexExport_chapter%": "Chapter",
+  "%flexExport_remark%": "Remark",
+  "%flexExport_figure%": "Figure",
+  "%flexExport_footnote%": "Footnote",
+  "%flexExport_flexProject%": "FLEx Project",
+  "%flexExport_selectFlexProject%": "Select FLEx project",
+  "%flexExport_searchFlexProjects%": "Search FLEx projects...",
+  "%flexExport_noFlexProjectsFound%": "No FLEx projects found",
+  "%flexExport_loadingFlexProjects%": "Loading FLEx projects...",
+  "%flexExport_writingSystem%": "Writing System",
+  "%flexExport_defaultWritingSystem%": "(default)",
+  "%flexExport_textName%": "Text Name",
+  "%flexExport_textNamePlaceholder%": "Enter text name",
+  "%flexExport_overwrite%": "Overwrite existing text",
+  "%flexExport_overwriteConfirmTitle%": "Confirm Overwrite",
+  "%flexExport_overwriteConfirmMessage%": "Are you sure you want to overwrite the existing text \"{textName}\"?",
+  "%flexExport_overwriteConfirmYes%": "Yes, Overwrite",
+  "%flexExport_overwriteConfirmNo%": "Cancel",
+  "%flexExport_export%": "Export",
+  "%flexExport_exporting%": "Exporting...",
+  "%flexExport_exportSuccess%": "Successfully exported {paragraphCount} paragraphs to \"{textName}\"",
+  "%flexExport_exportFailed%": "Export failed: {error}",
+  "%flexExport_windowsOnly%": "This feature is only available on Windows",
+  "%flexExport_noFlexProjectSelected%": "No FLEx project selected",
+  "%flexExport_flexNotFound%": "FLEx is not installed or no projects were found. Please install FLEx and create at least one project.",
+  "%flexExport_flexLoadError%": "Failed to load FLEx projects: {error}",
+  "%flexExport_flexNotAvailable%": "FLEx not available",
+  "%flexExport_renameConfirmMessage%": "A text named \"{textName}\" already exists. Create as \"{suggestedName}\" instead?",
+  "%flexExport_renameConfirmYes%": "Use \"{suggestedName}\"",
+  "%flexExport_renameConfirmNo%": "Cancel",
+};
+
 // Localization string keys
-const LOCALIZED_STRING_KEYS = [
-  "%flexExport_title%",
-  "%flexExport_paratextSettings%",
-  "%flexExport_flexSettings%",
-  "%flexExport_project%",
-  "%flexExport_paratextProject%",
-  "%flexExport_selectProject%",
-  "%flexExport_searchProjects%",
-  "%flexExport_noProjectsFound%",
-  "%flexExport_noProjectSelected%",
-  "%flexExport_selectBookChapter%",
-  "%flexExport_toChapter%",
-  "%flexExport_endChapter%",
-  "%flexExport_includeInExport%",
-  "%flexExport_footnotes%",
-  "%flexExport_crossReferences%",
-  "%flexExport_introduction%",
-  "%flexExport_remarks%",
-  "%flexExport_figures%",
-  "%flexExport_formatted%",
-  "%flexExport_usfm%",
-  "%flexExport_usjData%",
-  "%flexExport_scripturePreview%",
-  "%flexExport_usfmPreview%",
-  "%flexExport_usjJsonData%",
-  "%flexExport_loading%",
-  "%flexExport_noScriptureData%",
-  "%flexExport_noUsjData%",
-  "%flexExport_loadingScripture%",
-  "%flexExport_chapter%",
-  "%flexExport_remark%",
-  "%flexExport_figure%",
-  "%flexExport_footnote%",
-  "%flexExport_flexProject%",
-  "%flexExport_selectFlexProject%",
-  "%flexExport_searchFlexProjects%",
-  "%flexExport_noFlexProjectsFound%",
-  "%flexExport_loadingFlexProjects%",
-  "%flexExport_writingSystem%",
-  "%flexExport_defaultWritingSystem%",
-  "%flexExport_textName%",
-  "%flexExport_textNamePlaceholder%",
-  "%flexExport_overwrite%",
-  "%flexExport_overwriteConfirmTitle%",
-  "%flexExport_overwriteConfirmMessage%",
-  "%flexExport_overwriteConfirmYes%",
-  "%flexExport_overwriteConfirmNo%",
-  "%flexExport_export%",
-  "%flexExport_exporting%",
-  "%flexExport_exportSuccess%",
-  "%flexExport_exportFailed%",
-  "%flexExport_windowsOnly%",
-  "%flexExport_noFlexProjectSelected%",
-  "%flexExport_flexNotFound%",
-  "%flexExport_flexLoadError%",
-  "%flexExport_flexNotAvailable%",
-];
+const LOCALIZED_STRING_KEYS = Object.keys(ENGLISH_FALLBACKS);
 
 globalThis.webViewComponent = function ExportToFlexWebView({
   projectId,
@@ -122,8 +167,17 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   useWebViewState,
   state,
 }: WebViewProps) {
-  // Localized strings
-  const [localizedStrings] = useLocalizedStrings(LOCALIZED_STRING_KEYS);
+  // Get preloaded strings from state (if available) - these were fetched server-side
+  const preloadedStrings = (state?.preloadedStrings as Record<string, string> | undefined) || {};
+
+  // Localized strings - useMemo ensures stable reference to prevent re-subscriptions
+  const [rawLocalizedStrings] = useLocalizedStrings(useMemo(() => LOCALIZED_STRING_KEYS, []));
+
+  // Merge fallbacks: English → Preloaded (French/etc) → Async loaded
+  // This gives instant rendering with the user's language, no flash of % placeholders
+  const localizedStrings = useMemo(() => {
+    return { ...ENGLISH_FALLBACKS, ...preloadedStrings, ...rawLocalizedStrings };
+  }, [preloadedStrings, rawLocalizedStrings]);
 
   // Get UI locale direction for RTL interface support
   const [interfaceLanguages] = useSetting("platform.interfaceLanguage", ["en"]);
@@ -144,7 +198,6 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   interface ProjectExportSettings {
     flexProjectName: string;
     writingSystemCode: string;
-    overwriteEnabled: boolean;
     includeFootnotes: boolean;
     includeCrossRefs: boolean;
     includeIntro: boolean;
@@ -155,7 +208,6 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   const defaultSettings: ProjectExportSettings = {
     flexProjectName: "",
     writingSystemCode: "",
-    overwriteEnabled: false,
     includeFootnotes: false,
     includeCrossRefs: false,
     includeIntro: false,
@@ -197,9 +249,6 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   const savedWritingSystemCode = currentSettings.writingSystemCode;
   const setSavedWritingSystemCode = useCallback((v: string) => updateSetting("writingSystemCode", v), [updateSetting]);
 
-  const overwriteEnabled = currentSettings.overwriteEnabled;
-  const setOverwriteEnabled = useCallback((v: boolean) => updateSetting("overwriteEnabled", v), [updateSetting]);
-
   const includeFootnotes = currentSettings.includeFootnotes;
   const setIncludeFootnotes = useCallback((v: boolean) => updateSetting("includeFootnotes", v), [updateSetting]);
 
@@ -215,6 +264,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   const includeFigures = currentSettings.includeFigures;
   const setIncludeFigures = useCallback((v: boolean) => updateSetting("includeFigures", v), [updateSetting]);
 
+  // Overwrite setting - independent of project selection (stored in global WebView state)
+  const [overwriteEnabled, setOverwriteEnabled] = useWebViewState<boolean>("overwriteEnabled", false);
+
   // FLEx project state
   const [flexProjects, setFlexProjects] = useState<FlexProjectOption[]>([]);
   const [selectedFlexProject, setSelectedFlexProject] = useState<FlexProjectOption | undefined>();
@@ -228,10 +280,17 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // Text name and overwrite confirmation state
   const [textName, setTextName] = useState("");
   const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false);
+  const [showRenameConfirm, setShowRenameConfirm] = useState(false);
+  const [suggestedName, setSuggestedName] = useState("");
+  const [expectedExportName, setExpectedExportName] = useState<string | undefined>();
+  const [isCheckingName, setIsCheckingName] = useState(false);
 
   // Export state
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState<{ success: boolean; message: string } | undefined>();
+
+  // Last exported text info for "Open in FLEx" button
+  const [lastExportedText, setLastExportedText] = useState<{ projectName: string; textGuid: string } | undefined>();
 
   // Get chapter count for current book
   const chapterCount = useMemo(() => {
@@ -397,6 +456,52 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
     setTextName(generatedName);
   }, [scrRef.book, scrRef.chapterNum, endChapter]);
+
+  // Check text name in real-time to show expected export name
+  useEffect(() => {
+    // Don't check if no FLEx project selected or no text name or overwrite is enabled
+    if (!selectedFlexProject || !textName || overwriteEnabled) {
+      setExpectedExportName(undefined);
+      return;
+    }
+
+    let cancelled = false;
+    setIsCheckingName(true);
+
+    // Debounce: wait 300ms after user stops typing
+    const timeoutId = setTimeout(async () => {
+      try {
+        const result = await papi.commands.sendCommand(
+          "flexExport.checkTextName",
+          selectedFlexProject.name,
+          textName
+        ) as { exists: boolean; suggestedName?: string };
+
+        if (!cancelled) {
+          if (result.exists && result.suggestedName) {
+            setExpectedExportName(result.suggestedName);
+          } else {
+            setExpectedExportName(undefined);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to check text name:", err);
+        if (!cancelled) {
+          setExpectedExportName(undefined);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsCheckingName(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+      setIsCheckingName(false);
+    };
+  }, [selectedFlexProject, textName, overwriteEnabled]);
 
   // Fetch available projects (only editable projects unless secret mode enabled)
   useEffect(() => {
@@ -940,9 +1045,17 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     [includeFootnotes, includeCrossRefs, includeIntro, includeRemarks, includeFigures]
   );
 
+  // Generate a unique name by appending (2), (3), etc.
+  const generateUniqueName = useCallback((baseName: string, attemptNumber: number = 2): string => {
+    // Remove existing numbering if present
+    const cleanName = baseName.replace(/\s*\(\d+\)$/, '');
+    return `${cleanName} (${attemptNumber})`;
+  }, []);
+
   // Handle export button click
-  const handleExport = useCallback(async () => {
-    if (!selectedFlexProject || !textName || !chaptersUSJ.length) return;
+  const handleExport = useCallback(async (overrideTextName?: string) => {
+    const nameToUse = overrideTextName || textName;
+    if (!selectedFlexProject || !nameToUse || !chaptersUSJ.length) return;
 
     // If overwrite is enabled, show confirmation dialog first
     if (overwriteEnabled && !showOverwriteConfirm) {
@@ -951,10 +1064,62 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     }
 
     setShowOverwriteConfirm(false);
+    setShowRenameConfirm(false);
     setIsExporting(true);
     setExportStatus(undefined);
+    setLastExportedText(undefined);
 
     try {
+      // Check if FLEx is running and if project sharing is enabled
+      const flexStatus = await papi.commands.sendCommand(
+        "flexExport.checkFlexStatus",
+        selectedFlexProject.name
+      ) as { isRunning: boolean; sharingEnabled: boolean };
+
+      console.log('FLEx status check:', flexStatus);
+
+      // If FLEx is open but sharing is NOT enabled, show error
+      if (flexStatus.isRunning && !flexStatus.sharingEnabled) {
+        setExportStatus({
+          success: false,
+          message: "FieldWorks is open without sharing enabled. Please close FLEx or enable Project Sharing in Edit > Project Properties > Sharing tab."
+        });
+        setIsExporting(false);
+        return;
+      }
+
+      // If FLEx is running WITH sharing enabled and we're overwriting, use safe redirect workflow
+      if (flexStatus.isRunning && flexStatus.sharingEnabled && overwriteEnabled) {
+        console.log('Using safe redirect workflow...');
+
+        // 1. Get a safe navigation target
+        const navTarget = await papi.commands.sendCommand(
+          "flexExport.getSafeNavigationTarget",
+          selectedFlexProject.name,
+          nameToUse
+        ) as { guid?: string; tool: string };
+
+        console.log('Navigation target:', navTarget);
+
+        // 2. Navigate FLEx away from the target text
+        // Use the format that worked during testing: database%3d...%26tool%3d...%26guid%3d...%26tag%3d
+        const deepLink = navTarget.guid
+          ? `silfw://localhost/link?database%3d${encodeURIComponent(selectedFlexProject.name)}%26tool%3d${navTarget.tool}%26guid%3d${navTarget.guid}%26tag%3d`
+          : `silfw://localhost/link?database%3d${encodeURIComponent(selectedFlexProject.name)}%26tool%3d${navTarget.tool}%26tag%3d`;
+
+        console.log('Navigating away with deep link:', deepLink);
+
+        try {
+          await papi.commands.sendCommand('flexExport.navigateFlex', deepLink);
+          console.log('Deep link navigation initiated');
+        } catch (navErr) {
+          console.error('Deep link navigation failed:', navErr);
+        }
+
+        // 3. Wait for navigation to complete (give FLEx time to fully switch views and release the old text)
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
       // Filter USJ content based on toggles before export
       const filteredChapters = chaptersUSJ.map((chapter, idx) => {
         const isFirstChapter = idx === 0 && scrRef.chapterNum === 1;
@@ -970,37 +1135,128 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       const result = await papi.commands.sendCommand(
         "flexExport.exportToFlex",
         selectedFlexProject.name,
-        textName,
+        nameToUse,
         filteredChapters,
         {
           overwrite: overwriteEnabled,
           vernacularWs: selectedWritingSystem?.code,
         }
-      ) as { success: boolean; paragraphCount?: number; textName?: string; error?: string };
+      ) as { success: boolean; paragraphCount?: number; textName?: string; textGuid?: string; error?: string; errorCode?: string; suggestedName?: string };
 
       if (result.success) {
         const successMessage = (localizedStrings["%flexExport_exportSuccess%"] || "Successfully exported {paragraphCount} paragraphs to \"{textName}\"")
           .replace("{paragraphCount}", String(result.paragraphCount || 0))
-          .replace("{textName}", result.textName || textName);
+          .replace("{textName}", result.textName || nameToUse);
         setExportStatus({ success: true, message: successMessage });
+
+        // Store text GUID for "Open in FLEx" button
+        if (result.textGuid) {
+          setLastExportedText({
+            projectName: selectedFlexProject.name,
+            textGuid: result.textGuid
+          });
+
+          // If FLEx is running with sharing, navigate back to the Texts tool (without specific GUID)
+          // This avoids cache timing issues - the user can select the text from the list
+          if (flexStatus.isRunning && flexStatus.sharingEnabled) {
+            // Wait for FLEx to fully commit the changes before navigating
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // Navigate to interlinearEdit tool without a specific GUID - just opens the Texts area
+            const textToolLink = `silfw://localhost/link?database%3d${encodeURIComponent(selectedFlexProject.name)}%26tool%3dinterlinearEdit%26tag%3d`;
+            console.log('Navigating to Texts tool with deep link:', textToolLink);
+
+            try {
+              await papi.commands.sendCommand('flexExport.navigateFlex', textToolLink);
+              console.log('Navigation to Texts tool initiated');
+
+              // Optionally try to navigate to the specific created text
+              // If it fails (GUID not ready), we'll just stay in Texts area
+              if (result.textGuid) {
+                await new Promise(resolve => setTimeout(resolve, 500)); // Brief wait for Texts to load
+                const specificTextLink = `silfw://localhost/link?database%3d${encodeURIComponent(selectedFlexProject.name)}%26tool%3dinterlinearEdit%26guid%3d${result.textGuid}%26tag%3d`;
+                console.log('Attempting to navigate to specific text:', specificTextLink);
+
+                try {
+                  await papi.commands.sendCommand('flexExport.navigateFlex', specificTextLink);
+                  console.log('Successfully navigated to specific text');
+                } catch (specificNavErr) {
+                  console.log('Could not navigate to specific text (GUID not ready yet), staying in Texts area');
+                  // Silently fail - user can click the text from the list
+                }
+              }
+            } catch (navErr) {
+              console.error('Failed to navigate to Texts tool:', navErr);
+            }
+          }
+        }
       } else {
-        const errorMessage = (localizedStrings["%flexExport_exportFailed%"] || "Export failed: {error}")
-          .replace("{error}", result.error || "Unknown error");
-        setExportStatus({ success: false, message: errorMessage });
+        // Check if it's a TEXT_EXISTS error and overwrite is disabled
+        if (result.errorCode === "TEXT_EXISTS" && !overwriteEnabled) {
+          // Use the suggested name from the bridge (it already checked what exists)
+          const suggested = result.suggestedName || generateUniqueName(textName);
+          setSuggestedName(suggested);
+          setShowRenameConfirm(true);
+        } else if (result.errorCode === "PROJECT_LOCKED") {
+          // Special handling for locked project error
+          setExportStatus({
+            success: false,
+            message: result.error || "Project is locked. Please close FLEx or enable Project Sharing."
+          });
+        } else {
+          const errorMessage = (localizedStrings["%flexExport_exportFailed%"] || "Export failed: {error}")
+            .replace("{error}", result.error || "Unknown error");
+          setExportStatus({ success: false, message: errorMessage });
+        }
       }
     } catch (err) {
+      console.error('Export error:', err);
+
+      // Extract error message from various error formats
+      let errorText = "Unknown error";
+      if (err instanceof Error) {
+        errorText = err.message;
+      } else if (typeof err === 'object' && err !== null) {
+        // Try to extract error message from object
+        const errObj = err as Record<string, unknown>;
+        errorText = (errObj.error as string) ||
+                   (errObj.message as string) ||
+                   JSON.stringify(err);
+      } else if (typeof err === 'string') {
+        errorText = err;
+      }
+
       const errorMessage = (localizedStrings["%flexExport_exportFailed%"] || "Export failed: {error}")
-        .replace("{error}", err instanceof Error ? err.message : String(err));
+        .replace("{error}", errorText);
       setExportStatus({ success: false, message: errorMessage });
     } finally {
       setIsExporting(false);
     }
-  }, [selectedFlexProject, textName, chaptersUSJ, overwriteEnabled, showOverwriteConfirm, selectedWritingSystem, scrRef.chapterNum, filterUsjContent, localizedStrings]);
+  }, [selectedFlexProject, textName, chaptersUSJ, overwriteEnabled, showOverwriteConfirm, selectedWritingSystem, scrRef.chapterNum, filterUsjContent, localizedStrings, generateUniqueName]);
 
   // Cancel overwrite confirmation
   const handleCancelOverwrite = useCallback(() => {
     setShowOverwriteConfirm(false);
   }, []);
+
+  // Accept suggested renamed text
+  const handleAcceptRename = useCallback(() => {
+    handleExport(suggestedName);
+  }, [handleExport, suggestedName]);
+
+  // Cancel rename and stay on current screen
+  const handleCancelRename = useCallback(() => {
+    setShowRenameConfirm(false);
+    setSuggestedName("");
+  }, []);
+
+  // Open the last exported text in FLEx using deep link
+  const handleOpenInFlex = useCallback(async () => {
+    if (!lastExportedText) return;
+
+    const deepLink = `silfw://localhost/link?database%3d${encodeURIComponent(lastExportedText.projectName)}%26tool%3dinterlinearEdit%26guid%3d${lastExportedText.textGuid}%26tag%3d`;
+    await papi.commands.sendCommand('platform.openExternal', deepLink);
+  }, [lastExportedText]);
 
   // Format USJ as JSON for debug view (with filtering applied)
   const usjJson = useMemo(() => {
@@ -1245,17 +1501,25 @@ globalThis.webViewComponent = function ExportToFlexWebView({
               )}
 
               {/* Text Name Field */}
-              <div id="text-name-row" className="tw-flex tw-items-center tw-gap-3">
-                <Label id="text-name-label" htmlFor="text-name-input" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap">
-                  {localizedStrings["%flexExport_textName%"]}
-                </Label>
-                <Input
-                  id="text-name-input"
-                  value={textName}
-                  onChange={(e) => setTextName(e.target.value)}
-                  placeholder={localizedStrings["%flexExport_textNamePlaceholder%"]}
-                  className="tw-w-40"
-                />
+              <div id="text-name-section" className="tw-flex tw-flex-col tw-gap-1">
+                <div id="text-name-row" className="tw-flex tw-items-center tw-gap-3">
+                  <Label id="text-name-label" htmlFor="text-name-input" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap">
+                    {localizedStrings["%flexExport_textName%"]}
+                  </Label>
+                  <Input
+                    id="text-name-input"
+                    value={textName}
+                    onChange={(e) => setTextName(e.target.value)}
+                    placeholder={localizedStrings["%flexExport_textNamePlaceholder%"]}
+                    className="tw-w-40"
+                  />
+                </div>
+                {/* Expected export name hint */}
+                {expectedExportName && !overwriteEnabled && (
+                  <div id="expected-name-hint" className="tw-text-xs tw-text-muted-foreground tw-ml-28 tw-italic">
+                    Will be created as "{expectedExportName}"
+                  </div>
+                )}
               </div>
 
               {/* Overwrite Toggle */}
@@ -1274,7 +1538,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
               <div id="export-button-row" className="tw-flex tw-items-center tw-gap-3 tw-pt-1">
                 <Button
                   id="export-button"
-                  onClick={handleExport}
+                  onClick={() => handleExport()}
                   disabled={!selectedFlexProject || !textName || !chaptersUSJ.length || isExporting}
                 >
                   {isExporting
@@ -1283,29 +1547,63 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                 </Button>
 
                 {exportStatus && (
-                  <span id="export-status-message" className={`tw-text-sm ${exportStatus.success ? "tw-text-green-600" : "tw-text-red-600"}`}>
-                    {exportStatus.message}
-                  </span>
+                  <div className="tw-flex tw-items-center tw-gap-3">
+                    <span id="export-status-message" className={`tw-text-sm ${exportStatus.success ? "tw-text-green-600" : "tw-text-red-600"}`}>
+                      {exportStatus.message}
+                    </span>
+                    {exportStatus.success && lastExportedText && (
+                      <Button
+                        id="open-in-flex-button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleOpenInFlex}
+                      >
+                        Open in FLEx
+                      </Button>
+                    )}
+                  </div>
                 )}
               </div>
 
-              {/* Overwrite Confirmation Dialog */}
-              {showOverwriteConfirm && (
-                <div id="overwrite-confirm-dialog" className="tw-p-2 tw-bg-amber-50 tw-border tw-border-amber-200 tw-rounded-md dark:tw-bg-amber-900/20 dark:tw-border-amber-700">
-                  <p id="overwrite-confirm-message" className="tw-text-xs tw-text-amber-800 dark:tw-text-amber-200 tw-mb-2">
+              {/* Overwrite Confirmation Modal */}
+              <Modal open={showOverwriteConfirm} onClose={handleCancelOverwrite}>
+                <ModalHeader>
+                  <ModalTitle>{localizedStrings["%flexExport_overwrite%"] || "Overwrite?"}</ModalTitle>
+                  <ModalDescription>
                     {(localizedStrings["%flexExport_overwriteConfirmMessage%"] || "")
                       .replace("{textName}", textName)}
-                  </p>
-                  <div id="overwrite-confirm-buttons" className="tw-flex tw-gap-2">
-                    <Button id="overwrite-confirm-yes" size="sm" variant="destructive" onClick={handleExport}>
-                      {localizedStrings["%flexExport_overwriteConfirmYes%"]}
-                    </Button>
-                    <Button id="overwrite-confirm-no" size="sm" variant="outline" onClick={handleCancelOverwrite}>
-                      {localizedStrings["%flexExport_overwriteConfirmNo%"]}
-                    </Button>
-                  </div>
-                </div>
-              )}
+                  </ModalDescription>
+                </ModalHeader>
+                <ModalFooter>
+                  <Button variant="outline" onClick={handleCancelOverwrite}>
+                    {localizedStrings["%flexExport_overwriteConfirmNo%"] || "Cancel"}
+                  </Button>
+                  <Button variant="destructive" onClick={() => handleExport()}>
+                    {localizedStrings["%flexExport_overwriteConfirmYes%"] || "Overwrite"}
+                  </Button>
+                </ModalFooter>
+              </Modal>
+
+              {/* Rename Confirmation Modal */}
+              <Modal open={showRenameConfirm} onClose={handleCancelRename}>
+                <ModalHeader>
+                  <ModalTitle>{localizedStrings["%flexExport_textName%"] || "Text Name"}</ModalTitle>
+                  <ModalDescription>
+                    {(localizedStrings["%flexExport_renameConfirmMessage%"] || 'A text named "{textName}" already exists. Create as "{suggestedName}" instead?')
+                      .replace("{textName}", textName)
+                      .replace("{suggestedName}", suggestedName)}
+                  </ModalDescription>
+                </ModalHeader>
+                <ModalFooter>
+                  <Button variant="outline" onClick={handleCancelRename}>
+                    {localizedStrings["%flexExport_renameConfirmNo%"] || "Cancel"}
+                  </Button>
+                  <Button onClick={handleAcceptRename}>
+                    {(localizedStrings["%flexExport_renameConfirmYes%"] || 'Use "{suggestedName}"')
+                      .replace("{suggestedName}", suggestedName)}
+                  </Button>
+                </ModalFooter>
+              </Modal>
             </div>
           </div>
         </div>
