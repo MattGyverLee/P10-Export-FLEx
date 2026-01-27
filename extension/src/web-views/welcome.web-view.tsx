@@ -643,11 +643,10 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       console.log('[FLEx Dropdown] handleFlexProjectChange called with:', option);
       setSelectedFlexProject(option);
       setExportStatus(undefined);
-      // Persist the selection to project settings
-      setSavedFlexProjectName(option?.name || "");
+      // Note: We persist to settings in a useEffect below, not here
       console.log('[FLEx Dropdown] State updates queued');
     },
-    [setSavedFlexProjectName]
+    []
   );
 
   // Handle writing system selection
@@ -655,12 +654,33 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     (option: WritingSystemOption | undefined) => {
       console.log('[Writing System Dropdown] handleWritingSystemChange called with:', option);
       setSelectedWritingSystem(option);
-      // Persist the selection to project settings
-      setSavedWritingSystemCode(option?.code || "");
+      // Note: We persist to settings in a useEffect below, not here
       console.log('[Writing System Dropdown] State updates queued');
     },
-    [setSavedWritingSystemCode]
+    []
   );
+
+  // Persist FLEx project selection to settings (after dropdown closes)
+  useEffect(() => {
+    if (selectedFlexProject) {
+      try {
+        setSavedFlexProjectName(selectedFlexProject.name);
+      } catch (error) {
+        console.error('[FLEx] Failed to save project name to settings:', error);
+      }
+    }
+  }, [selectedFlexProject, setSavedFlexProjectName]);
+
+  // Persist writing system selection to settings (after dropdown closes)
+  useEffect(() => {
+    if (selectedWritingSystem) {
+      try {
+        setSavedWritingSystemCode(selectedWritingSystem.code);
+      } catch (error) {
+        console.error('[FLEx] Failed to save writing system to settings:', error);
+      }
+    }
+  }, [selectedWritingSystem, setSavedWritingSystemCode]);
 
   // Writing system options with default label (convert WritingSystemInfo to WritingSystemOption)
   const writingSystemOptions = useMemo((): WritingSystemOption[] => {
