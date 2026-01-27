@@ -215,79 +215,36 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // End chapter for range selection (defaults to start chapter)
   const [endChapter, setEndChapter] = useState(initialScrRef?.chapterNum || 1);
 
-  // Store all project settings in a single WebView state map (keyed by Paratext project ID)
-  const [allProjectSettings, setAllProjectSettings] = useWebViewState<Record<string, ProjectExportSettings>>(
-    "projectSettings",
-    {}
+  // Per-project settings using flat WebView state keys (avoids nested object serialization issues)
+  // Each setting uses a compound key: "settingName-projectId"
+  const [savedFlexProjectName, setSavedFlexProjectName] = useWebViewState<string>(
+    `flexProjectName-${projectId || "default"}`,
+    ""
   );
-
-  // Get settings for the current project (or defaults if none saved)
-  const currentSettings = useMemo(() => {
-    if (!projectId) return DEFAULT_PROJECT_SETTINGS;
-    return allProjectSettings[projectId] || DEFAULT_PROJECT_SETTINGS;
-  }, [projectId, allProjectSettings]);
-
-  // Helper to update a single setting for the current project
-  const updateSetting = useCallback(<K extends keyof ProjectExportSettings>(
-    key: K,
-    value: ProjectExportSettings[K]
-  ) => {
-    if (!projectId) return;
-    setAllProjectSettings((prev: Record<string, ProjectExportSettings>) => {
-      // Clean the previous state - only keep valid serializable project settings
-      const cleanedPrev: Record<string, ProjectExportSettings> = {};
-      Object.keys(prev).forEach((pid) => {
-        const settings = prev[pid];
-        if (settings && typeof settings === 'object') {
-          cleanedPrev[pid] = {
-            flexProjectName: typeof settings.flexProjectName === 'string' ? settings.flexProjectName : DEFAULT_PROJECT_SETTINGS.flexProjectName,
-            writingSystemCode: typeof settings.writingSystemCode === 'string' ? settings.writingSystemCode : DEFAULT_PROJECT_SETTINGS.writingSystemCode,
-            includeFootnotes: typeof settings.includeFootnotes === 'boolean' ? settings.includeFootnotes : DEFAULT_PROJECT_SETTINGS.includeFootnotes,
-            includeCrossRefs: typeof settings.includeCrossRefs === 'boolean' ? settings.includeCrossRefs : DEFAULT_PROJECT_SETTINGS.includeCrossRefs,
-            includeIntro: typeof settings.includeIntro === 'boolean' ? settings.includeIntro : DEFAULT_PROJECT_SETTINGS.includeIntro,
-            includeRemarks: typeof settings.includeRemarks === 'boolean' ? settings.includeRemarks : DEFAULT_PROJECT_SETTINGS.includeRemarks,
-            includeFigures: typeof settings.includeFigures === 'boolean' ? settings.includeFigures : DEFAULT_PROJECT_SETTINGS.includeFigures,
-          };
-        }
-      });
-
-      // Get existing settings for current project or defaults
-      const existingSettings = cleanedPrev[projectId] || DEFAULT_PROJECT_SETTINGS;
-
-      // Create new settings with the updated value
-      const newProjectSettings: ProjectExportSettings = {
-        ...existingSettings,
-        [key]: value,
-      };
-
-      return {
-        ...cleanedPrev,
-        [projectId]: newProjectSettings,
-      };
-    });
-  }, [projectId, setAllProjectSettings]);
-
-  // Convenience accessors for individual settings
-  const savedFlexProjectName = currentSettings.flexProjectName;
-  const setSavedFlexProjectName = useCallback((v: string) => updateSetting("flexProjectName", v), [updateSetting]);
-
-  const savedWritingSystemCode = currentSettings.writingSystemCode;
-  const setSavedWritingSystemCode = useCallback((v: string) => updateSetting("writingSystemCode", v), [updateSetting]);
-
-  const includeFootnotes = currentSettings.includeFootnotes;
-  const setIncludeFootnotes = useCallback((v: boolean) => updateSetting("includeFootnotes", v), [updateSetting]);
-
-  const includeCrossRefs = currentSettings.includeCrossRefs;
-  const setIncludeCrossRefs = useCallback((v: boolean) => updateSetting("includeCrossRefs", v), [updateSetting]);
-
-  const includeIntro = currentSettings.includeIntro;
-  const setIncludeIntro = useCallback((v: boolean) => updateSetting("includeIntro", v), [updateSetting]);
-
-  const includeRemarks = currentSettings.includeRemarks;
-  const setIncludeRemarks = useCallback((v: boolean) => updateSetting("includeRemarks", v), [updateSetting]);
-
-  const includeFigures = currentSettings.includeFigures;
-  const setIncludeFigures = useCallback((v: boolean) => updateSetting("includeFigures", v), [updateSetting]);
+  const [savedWritingSystemCode, setSavedWritingSystemCode] = useWebViewState<string>(
+    `writingSystemCode-${projectId || "default"}`,
+    ""
+  );
+  const [includeFootnotes, setIncludeFootnotes] = useWebViewState<boolean>(
+    `includeFootnotes-${projectId || "default"}`,
+    false
+  );
+  const [includeCrossRefs, setIncludeCrossRefs] = useWebViewState<boolean>(
+    `includeCrossRefs-${projectId || "default"}`,
+    false
+  );
+  const [includeIntro, setIncludeIntro] = useWebViewState<boolean>(
+    `includeIntro-${projectId || "default"}`,
+    false
+  );
+  const [includeRemarks, setIncludeRemarks] = useWebViewState<boolean>(
+    `includeRemarks-${projectId || "default"}`,
+    false
+  );
+  const [includeFigures, setIncludeFigures] = useWebViewState<boolean>(
+    `includeFigures-${projectId || "default"}`,
+    true
+  );
 
   // Overwrite setting - independent of project selection (stored in global WebView state)
   const [overwriteEnabled, setOverwriteEnabled] = useWebViewState<boolean>("overwriteEnabled", false);
@@ -376,8 +333,8 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             setFlexProjects(options);
 
             // Restore saved FLEx project selection if available
-            if (savedFlexProject) {
-              const savedOption = options.find((p) => p.name === savedFlexProject);
+            if (savedFlexProjectName) {
+              const savedOption = options.find((p) => p.name === savedFlexProjectName);
               if (savedOption) {
                 setSelectedFlexProject(savedOption);
               }
@@ -406,7 +363,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     return () => {
       cancelled = true;
     };
-  }, [savedFlexProject]);
+  }, [savedFlexProjectName]);
 
   // Get the saved writing system code (handle potential error)
   const savedWsCode = isPlatformError(savedWritingSystemCode) ? "" : savedWritingSystemCode;
@@ -687,31 +644,19 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     setExportStatus(undefined);
   }, [selectedFlexProject]);
 
-  // TODO: Re-enable persistence once Platform.Bible supports nested object serialization
-  // The WebView state validation is very strict and doesn't allow nested objects
-  // For now, selections work but aren't persisted between sessions
-
   // Persist FLEx project selection to settings (after dropdown closes)
-  // useEffect(() => {
-  //   if (selectedFlexProject) {
-  //     try {
-  //       setSavedFlexProjectName(selectedFlexProject.name);
-  //     } catch (error) {
-  //       console.error('[FLEx] Failed to save project name to settings:', error);
-  //     }
-  //   }
-  // }, [selectedFlexProject, setSavedFlexProjectName]);
+  useEffect(() => {
+    if (selectedFlexProject) {
+      setSavedFlexProjectName(selectedFlexProject.name);
+    }
+  }, [selectedFlexProject, setSavedFlexProjectName]);
 
   // Persist writing system selection to settings (after dropdown closes)
-  // useEffect(() => {
-  //   if (selectedWritingSystem) {
-  //     try {
-  //       setSavedWritingSystemCode(selectedWritingSystem.code);
-  //     } catch (error) {
-  //       console.error('[FLEx] Failed to save writing system to settings:', error);
-  //     }
-  //   }
-  // }, [selectedWritingSystem, setSavedWritingSystemCode]);
+  useEffect(() => {
+    if (selectedWritingSystem) {
+      setSavedWritingSystemCode(selectedWritingSystem.code);
+    }
+  }, [selectedWritingSystem, setSavedWritingSystemCode]);
 
   // Writing system options with default label (convert WritingSystemInfo to WritingSystemOption)
   const writingSystemOptions = useMemo((): WritingSystemOption[] => {
