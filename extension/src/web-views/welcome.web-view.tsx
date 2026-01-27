@@ -233,13 +233,38 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     value: ProjectExportSettings[K]
   ) => {
     if (!projectId) return;
-    setAllProjectSettings((prev: Record<string, ProjectExportSettings>) => ({
-      ...prev,
-      [projectId]: {
-        ...(prev[projectId] || DEFAULT_PROJECT_SETTINGS),
+    setAllProjectSettings((prev: Record<string, ProjectExportSettings>) => {
+      // Clean the previous state - only keep valid serializable project settings
+      const cleanedPrev: Record<string, ProjectExportSettings> = {};
+      Object.keys(prev).forEach((pid) => {
+        const settings = prev[pid];
+        if (settings && typeof settings === 'object') {
+          cleanedPrev[pid] = {
+            flexProjectName: typeof settings.flexProjectName === 'string' ? settings.flexProjectName : DEFAULT_PROJECT_SETTINGS.flexProjectName,
+            writingSystemCode: typeof settings.writingSystemCode === 'string' ? settings.writingSystemCode : DEFAULT_PROJECT_SETTINGS.writingSystemCode,
+            includeFootnotes: typeof settings.includeFootnotes === 'boolean' ? settings.includeFootnotes : DEFAULT_PROJECT_SETTINGS.includeFootnotes,
+            includeCrossRefs: typeof settings.includeCrossRefs === 'boolean' ? settings.includeCrossRefs : DEFAULT_PROJECT_SETTINGS.includeCrossRefs,
+            includeIntro: typeof settings.includeIntro === 'boolean' ? settings.includeIntro : DEFAULT_PROJECT_SETTINGS.includeIntro,
+            includeRemarks: typeof settings.includeRemarks === 'boolean' ? settings.includeRemarks : DEFAULT_PROJECT_SETTINGS.includeRemarks,
+            includeFigures: typeof settings.includeFigures === 'boolean' ? settings.includeFigures : DEFAULT_PROJECT_SETTINGS.includeFigures,
+          };
+        }
+      });
+
+      // Get existing settings for current project or defaults
+      const existingSettings = cleanedPrev[projectId] || DEFAULT_PROJECT_SETTINGS;
+
+      // Create new settings with the updated value
+      const newProjectSettings: ProjectExportSettings = {
+        ...existingSettings,
         [key]: value,
-      },
-    }));
+      };
+
+      return {
+        ...cleanedPrev,
+        [projectId]: newProjectSettings,
+      };
+    });
   }, [projectId, setAllProjectSettings]);
 
   // Convenience accessors for individual settings
