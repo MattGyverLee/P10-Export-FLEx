@@ -446,6 +446,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   }, [selectedFlexProject, savedWsCode]);
 
   // Auto-generate text name from book and chapter range
+  // Includes Paratext project code as suffix (e.g., "1 John 5 - BVM")
   useEffect(() => {
     if (!scrRef.book) return;
 
@@ -458,8 +459,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       generatedName = `${bookName} ${scrRef.chapterNum}-${endChapter}`;
     }
 
+    // Append Paratext project code if available
+    if (selectedProject?.label) {
+      generatedName = `${generatedName} - ${selectedProject.label}`;
+    }
+
     setTextName(generatedName);
-  }, [scrRef.book, scrRef.chapterNum, endChapter]);
+  }, [scrRef.book, scrRef.chapterNum, endChapter, selectedProject]);
 
   // Check text name in real-time to show expected export name
   useEffect(() => {

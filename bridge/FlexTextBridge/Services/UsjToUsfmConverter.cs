@@ -77,11 +77,17 @@ namespace FlexTextBridge.Services
             "iex", "imte", "imte1", "imte2", "ie"
         };
 
-        // Section heading markers (analysis WS)
+        // Section heading markers (marker is analysis WS, content is vernacular)
         private static readonly HashSet<string> SectionMarkers = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "s", "s1", "s2", "s3", "s4", "sr", "r", "mr", "ms", "ms1", "ms2", "ms3",
+            "s", "s1", "s2", "s3", "s4", "ms", "ms1", "ms2", "ms3",
             "mte", "mte1", "mte2", "mt", "mt1", "mt2", "mt3"
+        };
+
+        // Reference markers (marker is analysis WS, content is also analysis - references)
+        private static readonly HashSet<string> ReferenceMarkers = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "sr", "r", "mr", "rq"
         };
 
         // Footnote markers (analysis WS for the markers, vernacular for content)
@@ -204,8 +210,9 @@ namespace FlexTextBridge.Services
                     bool isParaMarker = ParagraphMarkers.Contains(marker ?? "p");
                     bool isSectionMarker = SectionMarkers.Contains(marker ?? "");
                     bool isIntroMarker = IntroMarkers.Contains(marker ?? "");
+                    bool isReferenceMarker = ReferenceMarkers.Contains(marker ?? "");
 
-                    if (isParaMarker || isSectionMarker || isIntroMarker)
+                    if (isParaMarker || isSectionMarker || isIntroMarker || isReferenceMarker)
                     {
                         // Start new paragraph
                         if (activeParagraph.Segments.Count > 0)
@@ -217,8 +224,9 @@ namespace FlexTextBridge.Services
                     }
 
                     // Process paragraph content
-                    ProcessContent(node.Content, activeParagraph, paragraphs, ref activeParagraph,
-                        isSectionMarker); // Section headers are all analysis
+                    // Reference markers (\sr, \r, \mr) have analysis content (book/chapter/verse references)
+                    // Section heading content and regular paragraph content is vernacular
+                    ProcessContent(node.Content, activeParagraph, paragraphs, ref activeParagraph, isReferenceMarker);
                     break;
 
                 case "char":
@@ -267,13 +275,14 @@ namespace FlexTextBridge.Services
                     break;
 
                 case "figure":
-                    // Figure - all analysis WS
+                    // Figure - marker and attributes are analysis, caption content is vernacular
                     activeParagraph.AddSegment($"\\fig ", false);
                     if (!string.IsNullOrEmpty(node.File))
                         activeParagraph.AddSegment($"|src=\"{node.File}\" ", false);
                     if (!string.IsNullOrEmpty(node.Ref))
                         activeParagraph.AddSegment($"ref=\"{node.Ref}\" ", false);
-                    ProcessContent(node.Content, activeParagraph, paragraphs, ref activeParagraph, true);
+                    // Caption text is translated (vernacular)
+                    ProcessContent(node.Content, activeParagraph, paragraphs, ref activeParagraph, false);
                     activeParagraph.AddSegment("\\fig* ", false);
                     break;
 
