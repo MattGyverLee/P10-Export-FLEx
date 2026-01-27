@@ -333,10 +333,14 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             setFlexProjects(options);
 
             // Restore saved FLEx project selection if available
+            console.log('[Persistence] Attempting to restore FLEx project. Saved name:', savedFlexProjectName, 'Available options:', options.length);
             if (savedFlexProjectName) {
               const savedOption = options.find((p) => p.name === savedFlexProjectName);
               if (savedOption) {
+                console.log('[Persistence] Restored FLEx project:', savedOption.label);
                 setSelectedFlexProject(savedOption);
+              } else {
+                console.log('[Persistence] Saved FLEx project not found in available options');
               }
             }
           } else {
@@ -389,16 +393,21 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           setFlexProjectDetails(details);
 
           // Try to restore saved writing system, fall back to default
+          console.log('[Persistence] Attempting to restore writing system. Saved code:', savedWsCode, 'Available systems:', details.vernacularWritingSystems?.length);
           let wsToSelect: WritingSystemInfo | undefined;
 
           if (savedWsCode && details.vernacularWritingSystems) {
             wsToSelect = details.vernacularWritingSystems.find((ws) => ws.code === savedWsCode);
+            if (wsToSelect) {
+              console.log('[Persistence] Restored saved writing system:', wsToSelect.code);
+            }
           }
 
           // If no saved WS or saved WS not found, use default
           if (!wsToSelect) {
             wsToSelect = details.vernacularWritingSystems?.find((ws) => ws.isDefault)
               || details.vernacularWritingSystems?.[0];
+            console.log('[Persistence] Using default writing system:', wsToSelect?.code);
           }
 
           if (wsToSelect) {
@@ -647,16 +656,28 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // Persist FLEx project selection to settings (after dropdown closes)
   useEffect(() => {
     if (selectedFlexProject) {
+      console.log('[Persistence] Saving FLEx project:', selectedFlexProject.name, 'to key:', `flexProjectName-${projectId || "default"}`);
       setSavedFlexProjectName(selectedFlexProject.name);
     }
-  }, [selectedFlexProject, setSavedFlexProjectName]);
+  }, [selectedFlexProject, setSavedFlexProjectName, projectId]);
 
   // Persist writing system selection to settings (after dropdown closes)
   useEffect(() => {
     if (selectedWritingSystem) {
+      console.log('[Persistence] Saving writing system:', selectedWritingSystem.code, 'to key:', `writingSystemCode-${projectId || "default"}`);
       setSavedWritingSystemCode(selectedWritingSystem.code);
     }
-  }, [selectedWritingSystem, setSavedWritingSystemCode]);
+  }, [selectedWritingSystem, setSavedWritingSystemCode, projectId]);
+
+  // Debug: Log saved values on mount and when they change
+  useEffect(() => {
+    console.log('[Persistence] Current saved values:', {
+      projectId,
+      savedFlexProjectName,
+      savedWritingSystemCode,
+      keyPrefix: `xxx-${projectId || "default"}`
+    });
+  }, [projectId, savedFlexProjectName, savedWritingSystemCode]);
 
   // Writing system options with default label (convert WritingSystemInfo to WritingSystemOption)
   const writingSystemOptions = useMemo((): WritingSystemOption[] => {
