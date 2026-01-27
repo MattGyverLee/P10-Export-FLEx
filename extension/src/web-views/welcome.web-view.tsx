@@ -83,6 +83,28 @@ type ProjectOption = {
   id: string;
 };
 
+// Per-project export settings (stored in WebView state)
+interface ProjectExportSettings {
+  flexProjectName: string;
+  writingSystemCode: string;
+  includeFootnotes: boolean;
+  includeCrossRefs: boolean;
+  includeIntro: boolean;
+  includeRemarks: boolean;
+  includeFigures: boolean;
+}
+
+// Default settings for new projects
+const DEFAULT_PROJECT_SETTINGS: ProjectExportSettings = {
+  flexProjectName: "",
+  writingSystemCode: "",
+  includeFootnotes: false,
+  includeCrossRefs: false,
+  includeIntro: false,
+  includeRemarks: false,
+  includeFigures: true,
+};
+
 // Default scripture reference
 const DEFAULT_SCR_REF: SerializedVerseRef = { book: "GEN", chapterNum: 1, verseNum: 1 };
 
@@ -193,29 +215,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // End chapter for range selection (defaults to start chapter)
   const [endChapter, setEndChapter] = useState(initialScrRef?.chapterNum || 1);
 
-  // Per-project settings storage - keyed by Paratext project ID
-  // This stores a map of project IDs to their export settings
-  interface ProjectExportSettings {
-    flexProjectName: string;
-    writingSystemCode: string;
-    includeFootnotes: boolean;
-    includeCrossRefs: boolean;
-    includeIntro: boolean;
-    includeRemarks: boolean;
-    includeFigures: boolean;
-  }
-
-  const defaultSettings: ProjectExportSettings = {
-    flexProjectName: "",
-    writingSystemCode: "",
-    includeFootnotes: false,
-    includeCrossRefs: false,
-    includeIntro: false,
-    includeRemarks: false,
-    includeFigures: true,
-  };
-
-  // Store all project settings in a single WebView state map
+  // Store all project settings in a single WebView state map (keyed by Paratext project ID)
   const [allProjectSettings, setAllProjectSettings] = useWebViewState<Record<string, ProjectExportSettings>>(
     "projectSettings",
     {}
@@ -223,8 +223,8 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
   // Get settings for the current project (or defaults if none saved)
   const currentSettings = useMemo(() => {
-    if (!projectId) return defaultSettings;
-    return allProjectSettings[projectId] || defaultSettings;
+    if (!projectId) return DEFAULT_PROJECT_SETTINGS;
+    return allProjectSettings[projectId] || DEFAULT_PROJECT_SETTINGS;
   }, [projectId, allProjectSettings]);
 
   // Helper to update a single setting for the current project
@@ -236,7 +236,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     setAllProjectSettings((prev: Record<string, ProjectExportSettings>) => ({
       ...prev,
       [projectId]: {
-        ...(prev[projectId] || defaultSettings),
+        ...(prev[projectId] || DEFAULT_PROJECT_SETTINGS),
         [key]: value,
       },
     }));
