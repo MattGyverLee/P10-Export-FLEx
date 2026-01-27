@@ -666,7 +666,6 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   const handleFlexProjectChange = useCallback(
     (option: FlexProjectOption | undefined) => {
       if (option) {
-        console.log('[FLEx Dropdown] Setting project to:', option.label);
         setSelectedFlexProject(option);
       }
     },
@@ -677,7 +676,6 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   const handleWritingSystemChange = useCallback(
     (option: WritingSystemOption | undefined) => {
       if (option) {
-        console.log('[Writing System Dropdown] Setting WS to:', option.label);
         setSelectedWritingSystem(option);
       }
     },
@@ -689,27 +687,31 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     setExportStatus(undefined);
   }, [selectedFlexProject]);
 
+  // TODO: Re-enable persistence once Platform.Bible supports nested object serialization
+  // The WebView state validation is very strict and doesn't allow nested objects
+  // For now, selections work but aren't persisted between sessions
+
   // Persist FLEx project selection to settings (after dropdown closes)
-  useEffect(() => {
-    if (selectedFlexProject) {
-      try {
-        setSavedFlexProjectName(selectedFlexProject.name);
-      } catch (error) {
-        console.error('[FLEx] Failed to save project name to settings:', error);
-      }
-    }
-  }, [selectedFlexProject, setSavedFlexProjectName]);
+  // useEffect(() => {
+  //   if (selectedFlexProject) {
+  //     try {
+  //       setSavedFlexProjectName(selectedFlexProject.name);
+  //     } catch (error) {
+  //       console.error('[FLEx] Failed to save project name to settings:', error);
+  //     }
+  //   }
+  // }, [selectedFlexProject, setSavedFlexProjectName]);
 
   // Persist writing system selection to settings (after dropdown closes)
-  useEffect(() => {
-    if (selectedWritingSystem) {
-      try {
-        setSavedWritingSystemCode(selectedWritingSystem.code);
-      } catch (error) {
-        console.error('[FLEx] Failed to save writing system to settings:', error);
-      }
-    }
-  }, [selectedWritingSystem, setSavedWritingSystemCode]);
+  // useEffect(() => {
+  //   if (selectedWritingSystem) {
+  //     try {
+  //       setSavedWritingSystemCode(selectedWritingSystem.code);
+  //     } catch (error) {
+  //       console.error('[FLEx] Failed to save writing system to settings:', error);
+  //     }
+  //   }
+  // }, [selectedWritingSystem, setSavedWritingSystemCode]);
 
   // Writing system options with default label (convert WritingSystemInfo to WritingSystemOption)
   const writingSystemOptions = useMemo((): WritingSystemOption[] => {
@@ -723,16 +725,6 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       };
     });
   }, [flexProjectDetails, localizedStrings]);
-
-  // Debug: Log when FLEx dropdown state changes
-  useEffect(() => {
-    console.log('[DEBUG] Component render - FLEx state:', {
-      selectedFlexProject,
-      flexProjects: flexProjects.length,
-      selectedWritingSystem,
-      writingSystemOptions: writingSystemOptions.length,
-    });
-  }, [selectedFlexProject, flexProjects, selectedWritingSystem, writingSystemOptions]);
 
   // Get text direction setting for RTL support
   const [textDirectionSetting] = useProjectSetting(projectId ?? undefined, "platform.textDirection", "");
