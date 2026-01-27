@@ -343,6 +343,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                 console.log('[Persistence] Saved FLEx project not found in available options');
               }
             }
+
+            // Preload project details in background for faster switching
+            // Fire-and-forget - don't await, just start loading
+            const projectNames = projects.map(p => p.name);
+            papi.commands.sendCommand("flexExport.preloadFlexProjectInfo", projectNames)
+              .then(() => console.log('[Preload] Background preloading complete'))
+              .catch((err: unknown) => console.log('[Preload] Background preloading failed:', err));
           } else {
             // No projects found - FLEx may not be installed or no projects exist
             setFlexProjects([]);
@@ -392,22 +399,28 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         if (!cancelled && details) {
           setFlexProjectDetails(details);
 
-          // Try to restore saved writing system, fall back to default
-          console.log('[Persistence] Attempting to restore writing system. Saved code:', savedWsCode, 'Available systems:', details.vernacularWritingSystems?.length);
+          // Select writing system: restore saved, or use default/only available
+          const wsCount = details.vernacularWritingSystems?.length || 0;
+          console.log('[WS] Available writing systems:', wsCount);
           let wsToSelect: WritingSystemInfo | undefined;
 
-          if (savedWsCode && details.vernacularWritingSystems) {
+          if (wsCount === 1) {
+            // Only one WS available - use it automatically (no selector shown)
+            wsToSelect = details.vernacularWritingSystems?.[0];
+            console.log('[WS] Auto-selecting only available writing system:', wsToSelect?.code);
+          } else if (savedWsCode && details.vernacularWritingSystems) {
+            // Multiple WS - try to restore saved selection
             wsToSelect = details.vernacularWritingSystems.find((ws) => ws.code === savedWsCode);
             if (wsToSelect) {
-              console.log('[Persistence] Restored saved writing system:', wsToSelect.code);
+              console.log('[WS] Restored saved writing system:', wsToSelect.code);
             }
           }
 
           // If no saved WS or saved WS not found, use default
-          if (!wsToSelect) {
+          if (!wsToSelect && wsCount > 1) {
             wsToSelect = details.vernacularWritingSystems?.find((ws) => ws.isDefault)
               || details.vernacularWritingSystems?.[0];
-            console.log('[Persistence] Using default writing system:', wsToSelect?.code);
+            console.log('[WS] Using default writing system:', wsToSelect?.code);
           }
 
           if (wsToSelect) {
@@ -1163,13 +1176,40 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             textGuid: result.textGuid
           });
 
-          // If FLEx is running with sharing, navigate back to the Texts tool (without specific GUID)
-          // This avoids cache timing issues - the user can select the text from the list
+          // If FLEx is running with sharing, navigate back to the Texts tool
           if (flexStatus.isRunning && flexStatus.sharingEnabled) {
-            // Wait for FLEx to fully commit the changes before navigating
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            // Verify the text is accessible before navigation
+            // This prevents "deleted object" errors by ensuring the text is fully committed
+            console.log('Verifying text is accessible before navigation...');
+            const maxRetries = 5;
+            let textVerified = false;
 
-            // Navigate to interlinearEdit tool without a specific GUID - just opens the Texts area
+            for (let i = 0; i < maxRetries; i++) {
+              try {
+                const verifyResult = await papi.commands.sendCommand(
+                  'flexExport.verifyText',
+                  selectedFlexProject.name,
+                  result.textGuid
+                ) as { success: boolean; isAccessible: boolean; paragraphCount: number };
+
+                if (verifyResult.success && verifyResult.isAccessible) {
+                  console.log(`Text verified on attempt ${i + 1}: ${verifyResult.paragraphCount} paragraphs`);
+                  textVerified = true;
+                  break;
+                }
+              } catch (verifyErr) {
+                console.log(`Verification attempt ${i + 1} failed:`, verifyErr);
+              }
+
+              // Wait before retry
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            if (!textVerified) {
+              console.warn('Text verification failed after retries, proceeding with caution');
+            }
+
+            // Navigate to interlinearEdit tool without a specific GUID first - just opens the Texts area
             const textToolLink = `silfw://localhost/link?database%3d${encodeURIComponent(selectedFlexProject.name)}%26tool%3dinterlinearEdit%26tag%3d`;
             console.log('Navigating to Texts tool with deep link:', textToolLink);
 
@@ -1177,20 +1217,21 @@ globalThis.webViewComponent = function ExportToFlexWebView({
               await papi.commands.sendCommand('flexExport.navigateFlex', textToolLink);
               console.log('Navigation to Texts tool initiated');
 
-              // Optionally try to navigate to the specific created text
-              // If it fails (GUID not ready), we'll just stay in Texts area
-              if (result.textGuid) {
+              // Only try to navigate to the specific text if it was verified
+              if (result.textGuid && textVerified) {
                 await new Promise(resolve => setTimeout(resolve, 500)); // Brief wait for Texts to load
                 const specificTextLink = `silfw://localhost/link?database%3d${encodeURIComponent(selectedFlexProject.name)}%26tool%3dinterlinearEdit%26guid%3d${result.textGuid}%26tag%3d`;
-                console.log('Attempting to navigate to specific text:', specificTextLink);
+                console.log('Navigating to specific verified text:', specificTextLink);
 
                 try {
                   await papi.commands.sendCommand('flexExport.navigateFlex', specificTextLink);
                   console.log('Successfully navigated to specific text');
                 } catch (specificNavErr) {
-                  console.log('Could not navigate to specific text (GUID not ready yet), staying in Texts area');
+                  console.log('Could not navigate to specific text, staying in Texts area');
                   // Silently fail - user can click the text from the list
                 }
+              } else if (!textVerified) {
+                console.log('Skipping direct navigation to text GUID - verification failed, user can select from list');
               }
             } catch (navErr) {
               console.error('Failed to navigate to Texts tool:', navErr);
@@ -1485,8 +1526,8 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                 />
               </div>
 
-              {/* Writing System Selector */}
-              {flexProjectDetails && writingSystemOptions.length > 0 && (
+              {/* Writing System Selector - only shown when multiple vernacular WS exist */}
+              {flexProjectDetails && writingSystemOptions.length > 1 && (
                 <div id="writing-system-row" className="tw-flex tw-items-center tw-gap-3">
                   <Label id="writing-system-label" htmlFor="writing-system-selector" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap">
                     {localizedStrings["%flexExport_writingSystem%"]}

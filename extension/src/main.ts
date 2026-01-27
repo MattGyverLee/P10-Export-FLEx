@@ -7,13 +7,18 @@ import type {
   WebViewDefinition,
 } from '@papi/core';
 import type { SerializedVerseRef } from '@sillsdev/scripture';
-import { FlexBridgeService, type FlexProjectInfo, type FlexProjectDetails, type CreateTextResult } from './services/flex-bridge.service';
+import { FlexBridgeService, type FlexProjectInfo, type FlexProjectDetails, type CreateTextResult, type VerifyTextResult } from './services/flex-bridge.service';
 
 // Import our WebView file as a string (will be bundled)
 import welcomeWebView from "./web-views/welcome.web-view?inline";
 
 // Bridge service instance (initialized during activation)
 let flexBridge: FlexBridgeService | undefined;
+
+// Cache for FLEx project details to avoid repeated slow LCM cache loads
+// Key: project name, Value: { details, timestamp }
+const projectInfoCache = new Map<string, { details: FlexProjectDetails; timestamp: number }>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minute cache TTL
 
 const welcomeWebViewType = "flex-export.welcome";
 
@@ -242,9 +247,17 @@ export async function activate(context: ExecutionActivationContext) {
   );
 
   // Register command to get detailed project info (including all writing systems)
+  // Uses in-memory cache to avoid repeated slow LCM cache loads when switching projects
   const getFlexProjectInfoPromise = papi.commands.registerCommand(
     "flexExport.getFlexProjectInfo",
     async (projectName: string): Promise<FlexProjectDetails | undefined> => {
+      // Check cache first (avoids expensive LcmCache.CreateCacheFromExistingData call)
+      const cached = projectInfoCache.get(projectName);
+      if (cached && (Date.now() - cached.timestamp) < CACHE_TTL_MS) {
+        logger.debug(`Using cached project info for "${projectName}"`);
+        return cached.details;
+      }
+
       if (!flexBridge) {
         logger.error("FlexBridge not initialized");
         return undefined;
@@ -256,7 +269,56 @@ export async function activate(context: ExecutionActivationContext) {
         return undefined;
       }
 
+      // Cache the result
+      if (result.project) {
+        projectInfoCache.set(projectName, {
+          details: result.project,
+          timestamp: Date.now(),
+        });
+        logger.debug(`Cached project info for "${projectName}"`);
+      }
+
       return result.project;
+    }
+  );
+
+  // Register command to preload project details in the background
+  // Call this after getting the project list to warm the cache
+  const preloadFlexProjectInfoPromise = papi.commands.registerCommand(
+    "flexExport.preloadFlexProjectInfo",
+    async (projectNames: string[]): Promise<void> => {
+      if (!flexBridge) return;
+
+      // Filter to only projects not already cached
+      const uncachedProjects = projectNames.filter(name => {
+        const cached = projectInfoCache.get(name);
+        return !cached || (Date.now() - cached.timestamp) >= CACHE_TTL_MS;
+      });
+
+      if (uncachedProjects.length === 0) {
+        logger.debug("All projects already cached");
+        return;
+      }
+
+      logger.debug(`Preloading ${uncachedProjects.length} project(s) in background`);
+
+      // Load projects sequentially to avoid overwhelming the system
+      // (Each load opens a full LCM cache which is resource-intensive)
+      for (const projectName of uncachedProjects) {
+        try {
+          const result = await flexBridge.getProjectInfo(projectName);
+          if (result.success && result.project) {
+            projectInfoCache.set(projectName, {
+              details: result.project,
+              timestamp: Date.now(),
+            });
+            logger.debug(`Preloaded project info for "${projectName}"`);
+          }
+        } catch (error) {
+          // Silently continue - preloading is best-effort
+          logger.debug(`Failed to preload "${projectName}": ${error}`);
+        }
+      }
     }
   );
 
@@ -303,6 +365,29 @@ export async function activate(context: ExecutionActivationContext) {
       }
 
       const result = await flexBridge.getSafeNavigationTarget(flexProjectName, textTitle);
+      return result;
+    }
+  );
+
+  // Register command to verify a text exists and is accessible by GUID
+  const verifyTextPromise = papi.commands.registerCommand(
+    "flexExport.verifyText",
+    async (
+      flexProjectName: string,
+      textGuid: string
+    ): Promise<VerifyTextResult> => {
+      if (!flexBridge) {
+        return {
+          success: false,
+          isAccessible: false,
+          hasContent: false,
+          paragraphCount: 0,
+          error: "FlexBridge not initialized",
+          errorCode: "UNKNOWN_ERROR",
+        };
+      }
+
+      const result = await flexBridge.verifyText(flexProjectName, textGuid);
       return result;
     }
   );
@@ -375,9 +460,11 @@ export async function activate(context: ExecutionActivationContext) {
   context.registrations.add(await openExportDialogPromise);
   context.registrations.add(await listFlexProjectsPromise);
   context.registrations.add(await getFlexProjectInfoPromise);
+  context.registrations.add(await preloadFlexProjectInfoPromise);
   context.registrations.add(await checkTextNamePromise);
   context.registrations.add(await checkFlexStatusPromise);
   context.registrations.add(await getSafeNavigationTargetPromise);
+  context.registrations.add(await verifyTextPromise);
   context.registrations.add(await navigateFlexPromise);
   context.registrations.add(await exportToFlexPromise);
 
