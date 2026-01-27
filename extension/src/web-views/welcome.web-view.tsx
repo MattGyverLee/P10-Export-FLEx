@@ -640,11 +640,10 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // Handle FLEx project selection
   const handleFlexProjectChange = useCallback(
     (option: FlexProjectOption | undefined) => {
-      console.log('[FLEx Dropdown] handleFlexProjectChange called with:', option);
-      setSelectedFlexProject(option);
-      setExportStatus(undefined);
-      // Note: We persist to settings in a useEffect below, not here
-      console.log('[FLEx Dropdown] State updates queued');
+      if (option) {
+        console.log('[FLEx Dropdown] Setting project to:', option.label);
+        setSelectedFlexProject(option);
+      }
     },
     []
   );
@@ -652,13 +651,18 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // Handle writing system selection
   const handleWritingSystemChange = useCallback(
     (option: WritingSystemOption | undefined) => {
-      console.log('[Writing System Dropdown] handleWritingSystemChange called with:', option);
-      setSelectedWritingSystem(option);
-      // Note: We persist to settings in a useEffect below, not here
-      console.log('[Writing System Dropdown] State updates queued');
+      if (option) {
+        console.log('[Writing System Dropdown] Setting WS to:', option.label);
+        setSelectedWritingSystem(option);
+      }
     },
     []
   );
+
+  // Clear export status when FLEx project changes
+  useEffect(() => {
+    setExportStatus(undefined);
+  }, [selectedFlexProject]);
 
   // Persist FLEx project selection to settings (after dropdown closes)
   useEffect(() => {
