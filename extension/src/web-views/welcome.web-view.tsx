@@ -653,32 +653,6 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     setExportStatus(undefined);
   }, [selectedFlexProject]);
 
-  // Persist FLEx project selection to settings (after dropdown closes)
-  useEffect(() => {
-    if (selectedFlexProject) {
-      console.log('[Persistence] Saving FLEx project:', selectedFlexProject.name, 'to key:', `flexProjectName-${projectId || "default"}`);
-      setSavedFlexProjectName(selectedFlexProject.name);
-    }
-  }, [selectedFlexProject, setSavedFlexProjectName, projectId]);
-
-  // Persist writing system selection to settings (after dropdown closes)
-  useEffect(() => {
-    if (selectedWritingSystem) {
-      console.log('[Persistence] Saving writing system:', selectedWritingSystem.code, 'to key:', `writingSystemCode-${projectId || "default"}`);
-      setSavedWritingSystemCode(selectedWritingSystem.code);
-    }
-  }, [selectedWritingSystem, setSavedWritingSystemCode, projectId]);
-
-  // Debug: Log saved values on mount and when they change
-  useEffect(() => {
-    console.log('[Persistence] Current saved values:', {
-      projectId,
-      savedFlexProjectName,
-      savedWritingSystemCode,
-      keyPrefix: `xxx-${projectId || "default"}`
-    });
-  }, [projectId, savedFlexProjectName, savedWritingSystemCode]);
-
   // Writing system options with default label (convert WritingSystemInfo to WritingSystemOption)
   const writingSystemOptions = useMemo((): WritingSystemOption[] => {
     if (!flexProjectDetails?.vernacularWritingSystems) return [];
@@ -1169,6 +1143,18 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           .replace("{paragraphCount}", String(result.paragraphCount || 0))
           .replace("{textName}", result.textName || nameToUse);
         setExportStatus({ success: true, message: successMessage });
+
+        // Save settings after successful export (Paratext project → FLEx project mapping)
+        if (selectedFlexProject && selectedWritingSystem) {
+          console.log('[Persistence] Export succeeded - saving settings for Paratext project:', projectId);
+          setSavedFlexProjectName(selectedFlexProject.name);
+          setSavedWritingSystemCode(selectedWritingSystem.code);
+          setIncludeFootnotes(includeFootnotes);
+          setIncludeCrossRefs(includeCrossRefs);
+          setIncludeIntro(includeIntro);
+          setIncludeRemarks(includeRemarks);
+          setIncludeFigures(includeFigures);
+        }
 
         // Store text GUID for "Open in FLEx" button
         if (result.textGuid) {
