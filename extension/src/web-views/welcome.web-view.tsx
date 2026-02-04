@@ -45,6 +45,43 @@ function ModalFooter({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Export progress step types
+type ExportStep = {
+  id: string;
+  label: string;
+  status: 'pending' | 'active' | 'done' | 'warning' | 'error';
+};
+
+function ExportProgressBar({ steps }: { steps: ExportStep[] }) {
+  if (!steps.length) return null;
+
+  const activeStep = steps.find(s => s.status === 'active');
+
+  return (
+    <div className="tw-mt-2 tw-mb-2">
+      <div className="tw-flex tw-gap-1 tw-mb-1">
+        {steps.map((step) => (
+          <div
+            key={step.id}
+            className={`tw-h-2 tw-flex-1 tw-rounded-sm tw-transition-colors tw-duration-300 ${
+              step.status === 'done' ? 'tw-bg-green-600' :
+              step.status === 'active' ? 'tw-bg-blue-500 tw-animate-pulse' :
+              step.status === 'warning' ? 'tw-bg-yellow-500' :
+              step.status === 'error' ? 'tw-bg-red-500' :
+              'tw-bg-gray-300'
+            }`}
+          />
+        ))}
+      </div>
+      {activeStep && (
+        <div className="tw-text-xs tw-text-muted-foreground">
+          {activeStep.label}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // FLEx project types (matching bridge service)
 interface FlexProjectInfo {
   name: string;
@@ -270,6 +307,12 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // Export state
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState<{ success: boolean; message: string } | undefined>();
+  const [exportSteps, setExportSteps] = useState<ExportStep[]>([]);
+
+  // Helper to update a single export step's status
+  const updateStep = useCallback((stepId: string, status: ExportStep['status']) => {
+    setExportSteps(prev => prev.map(s => s.id === stepId ? { ...s, status } : s));
+  }, []);
 
   // Last exported text info for "Open in FLEx" button
   const [lastExportedText, setLastExportedText] = useState<{ projectName: string; textGuid: string } | undefined>();
@@ -310,6 +353,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   const [includeResources, setIncludeResources] = useState(false);
 
   // Get the saved FLEx project name (handle potential error)
+  if (isPlatformError(savedFlexProjectName)) {
+    console.log('[Persistence] Auto-heal: PlatformError on savedFlexProjectName, using default');
+  }
   const savedFlexProject = isPlatformError(savedFlexProjectName) ? "" : savedFlexProjectName;
 
   // Load FLEx projects on mount
@@ -340,7 +386,8 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                 console.log('[Persistence] Restored FLEx project:', savedOption.label);
                 setSelectedFlexProject(savedOption);
               } else {
-                console.log('[Persistence] Saved FLEx project not found in available options');
+                console.log('[Persistence] Auto-heal: FLEx project not found, resetting:', savedFlexProjectName);
+                setSavedFlexProjectName("");
               }
             }
 
@@ -377,6 +424,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   }, [savedFlexProjectName]);
 
   // Get the saved writing system code (handle potential error)
+  if (isPlatformError(savedWritingSystemCode)) {
+    console.log('[Persistence] Auto-heal: PlatformError on savedWritingSystemCode, using default');
+  }
   const savedWsCode = isPlatformError(savedWritingSystemCode) ? "" : savedWritingSystemCode;
 
   // Load FLEx project details when a project is selected
@@ -413,6 +463,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             wsToSelect = details.vernacularWritingSystems.find((ws) => ws.code === savedWsCode);
             if (wsToSelect) {
               console.log('[WS] Restored saved writing system:', wsToSelect.code);
+            } else {
+              console.log('[Persistence] Auto-heal: WS not found, resetting:', savedWsCode);
+              setSavedWritingSystemCode("");
             }
           }
 
@@ -431,6 +484,27 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             });
           } else {
             setSelectedWritingSystem(undefined);
+          }
+
+          // Navigate FLEx away from Texts if running (fire-and-forget)
+          // This ensures FLEx is on the Lexicon well before the user clicks Export,
+          // avoiding stale-object errors when overwriting texts.
+          if (!cancelled) {
+            try {
+              const flexStatus = await papi.commands.sendCommand(
+                "flexExport.checkFlexStatus",
+                selectedFlexProject.name
+              ) as { isRunning: boolean; sharingEnabled: boolean };
+
+              if (flexStatus.isRunning && flexStatus.sharingEnabled) {
+                const lexiconLink = `silfw://localhost/link?database%3d${encodeURIComponent(selectedFlexProject.name)}%26tool%3dlexiconEdit%26tag%3d`;
+                console.log('[Navigate] FLEx is running with sharing - navigating to Lexicon');
+                papi.commands.sendCommand('flexExport.navigateFlex', lexiconLink)
+                  .catch((navErr: unknown) => console.warn('[Navigate] Lexicon navigation failed:', navErr));
+              }
+            } catch (navCheckErr) {
+              console.warn('[Navigate] Could not check FLEx status for early navigation:', navCheckErr);
+            }
           }
         }
       } catch (err) {
@@ -1083,6 +1157,30 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     setExportStatus(undefined);
     setLastExportedText(undefined);
 
+    // Initialize progress steps
+    const steps: ExportStep[] = [
+      { id: 'export', label: 'Exporting text...', status: 'active' },
+      { id: 'verify', label: 'Verifying text...', status: 'pending' },
+      { id: 'complete', label: 'Complete', status: 'pending' },
+    ];
+    setExportSteps(steps);
+
+    // Save settings at start of export (so they persist even if export fails)
+    try {
+      if (selectedFlexProject && selectedWritingSystem) {
+        console.log('[Persistence] Export starting - saving settings for Paratext project:', projectId);
+        setSavedFlexProjectName(selectedFlexProject.name);
+        setSavedWritingSystemCode(selectedWritingSystem.code);
+        setIncludeFootnotes(includeFootnotes);
+        setIncludeCrossRefs(includeCrossRefs);
+        setIncludeIntro(includeIntro);
+        setIncludeRemarks(includeRemarks);
+        setIncludeFigures(includeFigures);
+      }
+    } catch (saveErr) {
+      console.warn('[Persistence] Failed to save settings at export start:', saveErr);
+    }
+
     try {
       // Check if FLEx is running and if project sharing is enabled
       const flexStatus = await papi.commands.sendCommand(
@@ -1098,41 +1196,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           success: false,
           message: "FieldWorks is open without sharing enabled. Please close FLEx or enable Project Sharing in Edit > Project Properties > Sharing tab."
         });
+        updateStep('export', 'error');
         setIsExporting(false);
         return;
       }
 
-      // If FLEx is running WITH sharing enabled and we're overwriting, use safe redirect workflow
-      if (flexStatus.isRunning && flexStatus.sharingEnabled && overwriteEnabled) {
-        console.log('Using safe redirect workflow...');
-
-        // 1. Get a safe navigation target
-        const navTarget = await papi.commands.sendCommand(
-          "flexExport.getSafeNavigationTarget",
-          selectedFlexProject.name,
-          nameToUse
-        ) as { guid?: string; tool: string };
-
-        console.log('Navigation target:', navTarget);
-
-        // 2. Navigate FLEx away from the target text
-        // Use the format that worked during testing: database%3d...%26tool%3d...%26guid%3d...%26tag%3d
-        const deepLink = navTarget.guid
-          ? `silfw://localhost/link?database%3d${encodeURIComponent(selectedFlexProject.name)}%26tool%3d${navTarget.tool}%26guid%3d${navTarget.guid}%26tag%3d`
-          : `silfw://localhost/link?database%3d${encodeURIComponent(selectedFlexProject.name)}%26tool%3d${navTarget.tool}%26tag%3d`;
-
-        console.log('Navigating away with deep link:', deepLink);
-
-        try {
-          await papi.commands.sendCommand('flexExport.navigateFlex', deepLink);
-          console.log('Deep link navigation initiated');
-        } catch (navErr) {
-          console.error('Deep link navigation failed:', navErr);
-        }
-
-        // 3. Wait for navigation to complete (give FLEx time to fully switch views and release the old text)
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
+      // Note: FLEx navigation is handled early (when project details load), not at export time.
+      // By the time the user clicks Export, FLEx has already been moved to the Lexicon.
 
       // Filter USJ content based on toggles before export
       const filteredChapters = chaptersUSJ.map((chapter, idx) => {
@@ -1158,22 +1228,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       ) as { success: boolean; paragraphCount?: number; textName?: string; textGuid?: string; error?: string; errorCode?: string; suggestedName?: string };
 
       if (result.success) {
+        updateStep('export', 'done');
+        updateStep('verify', 'active');
+
         const successMessage = (localizedStrings["%flexExport_exportSuccess%"] || "Successfully exported {paragraphCount} paragraphs to \"{textName}\"")
           .replace("{paragraphCount}", String(result.paragraphCount || 0))
           .replace("{textName}", result.textName || nameToUse);
         setExportStatus({ success: true, message: successMessage });
-
-        // Save settings after successful export (Paratext project → FLEx project mapping)
-        if (selectedFlexProject && selectedWritingSystem) {
-          console.log('[Persistence] Export succeeded - saving settings for Paratext project:', projectId);
-          setSavedFlexProjectName(selectedFlexProject.name);
-          setSavedWritingSystemCode(selectedWritingSystem.code);
-          setIncludeFootnotes(includeFootnotes);
-          setIncludeCrossRefs(includeCrossRefs);
-          setIncludeIntro(includeIntro);
-          setIncludeRemarks(includeRemarks);
-          setIncludeFigures(includeFigures);
-        }
 
         // Store text GUID for "Open in FLEx" button
         if (result.textGuid) {
@@ -1182,11 +1243,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             textGuid: result.textGuid
           });
 
-          // If FLEx is running with sharing, navigate back to the Texts tool
+          // Verify text is accessible (confirms export fully committed)
           if (flexStatus.isRunning && flexStatus.sharingEnabled) {
-            // Verify the text is accessible before navigation
-            // This prevents "deleted object" errors by ensuring the text is fully committed
-            console.log('Verifying text is accessible before navigation...');
+            console.log('Verifying text is accessible...');
             const maxRetries = 5;
             let textVerified = false;
 
@@ -1211,40 +1270,18 @@ globalThis.webViewComponent = function ExportToFlexWebView({
               await new Promise(resolve => setTimeout(resolve, 500));
             }
 
-            if (!textVerified) {
-              console.warn('Text verification failed after retries, proceeding with caution');
-            }
-
-            // Navigate to interlinearEdit tool without a specific GUID first - just opens the Texts area
-            const textToolLink = `silfw://localhost/link?database%3d${encodeURIComponent(selectedFlexProject.name)}%26tool%3dinterlinearEdit%26tag%3d`;
-            console.log('Navigating to Texts tool with deep link:', textToolLink);
-
-            try {
-              await papi.commands.sendCommand('flexExport.navigateFlex', textToolLink);
-              console.log('Navigation to Texts tool initiated');
-
-              // Only try to navigate to the specific text if it was verified
-              if (result.textGuid && textVerified) {
-                await new Promise(resolve => setTimeout(resolve, 500)); // Brief wait for Texts to load
-                const specificTextLink = `silfw://localhost/link?database%3d${encodeURIComponent(selectedFlexProject.name)}%26tool%3dinterlinearEdit%26guid%3d${result.textGuid}%26tag%3d`;
-                console.log('Navigating to specific verified text:', specificTextLink);
-
-                try {
-                  await papi.commands.sendCommand('flexExport.navigateFlex', specificTextLink);
-                  console.log('Successfully navigated to specific text');
-                } catch (specificNavErr) {
-                  console.log('Could not navigate to specific text, staying in Texts area');
-                  // Silently fail - user can click the text from the list
-                }
-              } else if (!textVerified) {
-                console.log('Skipping direct navigation to text GUID - verification failed, user can select from list');
-              }
-            } catch (navErr) {
-              console.error('Failed to navigate to Texts tool:', navErr);
-            }
+            updateStep('verify', textVerified ? 'done' : 'warning');
+          } else {
+            updateStep('verify', 'done');
           }
+        } else {
+          updateStep('verify', 'done');
         }
+
+        updateStep('complete', 'done');
       } else {
+        updateStep('export', 'error');
+
         // Check if it's a TEXT_EXISTS error and overwrite is disabled
         if (result.errorCode === "TEXT_EXISTS" && !overwriteEnabled) {
           // Use the suggested name from the bridge (it already checked what exists)
@@ -1265,6 +1302,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       }
     } catch (err) {
       console.error('Export error:', err);
+      updateStep('export', 'error');
 
       // Extract error message from various error formats
       let errorText = "Unknown error";
@@ -1285,8 +1323,10 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       setExportStatus({ success: false, message: errorMessage });
     } finally {
       setIsExporting(false);
+      // Clear progress steps after a delay so user can see final state
+      setTimeout(() => setExportSteps([]), 5000);
     }
-  }, [selectedFlexProject, textName, chaptersUSJ, overwriteEnabled, showOverwriteConfirm, selectedWritingSystem, scrRef.chapterNum, filterUsjContent, localizedStrings, generateUniqueName]);
+  }, [selectedFlexProject, textName, chaptersUSJ, overwriteEnabled, showOverwriteConfirm, selectedWritingSystem, scrRef.chapterNum, filterUsjContent, localizedStrings, generateUniqueName, updateStep]);
 
   // Cancel overwrite confirmation
   const handleCancelOverwrite = useCallback(() => {
@@ -1597,6 +1637,11 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                     ? localizedStrings["%flexExport_exporting%"]
                     : localizedStrings["%flexExport_export%"]}
                 </Button>
+
+                {/* Progress bar shown during export */}
+                {exportSteps.length > 0 && (
+                  <ExportProgressBar steps={exportSteps} />
+                )}
 
                 {exportStatus && (
                   <div className="tw-flex tw-items-center tw-gap-3">

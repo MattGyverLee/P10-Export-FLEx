@@ -75,12 +75,22 @@ function PersistenceTestComponent({
     }
   }, [savedWritingSystemCode]);
 
-  // Simulate successful export that saves settings
-  const handleExportSuccess = () => {
+  // Simulate export start that saves settings (settings are now saved at export start, not after success)
+  const handleExportStart = () => {
     setSavedFlexProjectName(flexProject);
     setSavedWritingSystemCode(writingSystem);
     // Checkboxes are already using WebView state directly
     onSaveSettings?.();
+  };
+
+  // Auto-heal: reset invalid saved values
+  const handleAutoHeal = (validProjects: string[], validWsCodes: string[]) => {
+    if (savedFlexProjectName && !validProjects.includes(savedFlexProjectName)) {
+      setSavedFlexProjectName('');
+    }
+    if (savedWritingSystemCode && !validWsCodes.includes(savedWritingSystemCode)) {
+      setSavedWritingSystemCode('');
+    }
   };
 
   return (
@@ -162,8 +172,11 @@ function PersistenceTestComponent({
         Overwrite Enabled
       </label>
 
-      <button data-testid="export-button" onClick={handleExportSuccess}>
-        Export (Success)
+      <button data-testid="export-button" onClick={handleExportStart}>
+        Export
+      </button>
+      <button data-testid="auto-heal-button" onClick={() => handleAutoHeal(['ProjectA', 'ProjectB'], ['en', 'es'])}>
+        Auto-Heal
       </button>
     </div>
   );
@@ -286,8 +299,8 @@ describe('Settings Persistence', () => {
     });
   });
 
-  describe('Settings Save After Export', () => {
-    it('saves FLEx project and writing system on successful export', () => {
+  describe('Settings Save At Export Start', () => {
+    it('saves FLEx project and writing system when export starts', () => {
       const mockUseWebViewState = createMockUseWebViewState();
       const onSaveSettings = jest.fn();
 
@@ -435,6 +448,109 @@ describe('Settings Persistence', () => {
       );
 
       expect(screen.getByTestId('figures-checkbox')).toBeChecked();
+    });
+  });
+
+  describe('Auto-Heal', () => {
+    it('resets FLEx project name when saved project is not in valid list', async () => {
+      const mockUseWebViewState = createMockUseWebViewState();
+
+      render(
+        <PersistenceTestComponent projectId="test-project" useWebViewState={mockUseWebViewState} />
+      );
+
+      // Save a project name
+      fireEvent.change(screen.getByTestId('flex-project-input'), {
+        target: { value: 'DeletedProject' },
+      });
+      fireEvent.click(screen.getByTestId('export-button'));
+
+      expect(screen.getByTestId('saved-flex-project')).toHaveTextContent('DeletedProject');
+
+      // Trigger auto-heal with valid projects that don't include 'DeletedProject'
+      fireEvent.click(screen.getByTestId('auto-heal-button'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('saved-flex-project')).toHaveTextContent('');
+      });
+    });
+
+    it('resets writing system when saved WS is not in valid list', async () => {
+      const mockUseWebViewState = createMockUseWebViewState();
+
+      render(
+        <PersistenceTestComponent projectId="test-project" useWebViewState={mockUseWebViewState} />
+      );
+
+      // Save a writing system
+      fireEvent.change(screen.getByTestId('writing-system-input'), {
+        target: { value: 'xyz' },
+      });
+      fireEvent.click(screen.getByTestId('export-button'));
+
+      expect(screen.getByTestId('saved-writing-system')).toHaveTextContent('xyz');
+
+      // Trigger auto-heal with valid WS codes that don't include 'xyz'
+      fireEvent.click(screen.getByTestId('auto-heal-button'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('saved-writing-system')).toHaveTextContent('');
+      });
+    });
+
+    it('keeps valid settings intact when healing invalid ones', async () => {
+      const mockUseWebViewState = createMockUseWebViewState();
+
+      render(
+        <PersistenceTestComponent projectId="test-project" useWebViewState={mockUseWebViewState} />
+      );
+
+      // Save settings: valid project, invalid WS, checked footnotes
+      fireEvent.change(screen.getByTestId('flex-project-input'), {
+        target: { value: 'ProjectA' },
+      });
+      fireEvent.change(screen.getByTestId('writing-system-input'), {
+        target: { value: 'xyz' },
+      });
+      fireEvent.click(screen.getByTestId('footnotes-checkbox'));
+      fireEvent.click(screen.getByTestId('export-button'));
+
+      // Auto-heal: ProjectA is valid, xyz is not
+      fireEvent.click(screen.getByTestId('auto-heal-button'));
+
+      await waitFor(() => {
+        // Project should be kept (it's in the valid list)
+        expect(screen.getByTestId('saved-flex-project')).toHaveTextContent('ProjectA');
+        // WS should be reset (not in valid list)
+        expect(screen.getByTestId('saved-writing-system')).toHaveTextContent('');
+        // Checkbox should be unchanged
+        expect(screen.getByTestId('footnotes-checkbox')).toBeChecked();
+      });
+    });
+
+    it('does not reset values that are in the valid list', async () => {
+      const mockUseWebViewState = createMockUseWebViewState();
+
+      render(
+        <PersistenceTestComponent projectId="test-project" useWebViewState={mockUseWebViewState} />
+      );
+
+      // Save valid settings
+      fireEvent.change(screen.getByTestId('flex-project-input'), {
+        target: { value: 'ProjectB' },
+      });
+      fireEvent.change(screen.getByTestId('writing-system-input'), {
+        target: { value: 'en' },
+      });
+      fireEvent.click(screen.getByTestId('export-button'));
+
+      // Auto-heal: both are in the valid lists
+      fireEvent.click(screen.getByTestId('auto-heal-button'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('saved-flex-project')).toHaveTextContent('ProjectB');
+        expect(screen.getByTestId('saved-writing-system')).toHaveTextContent('en');
+      });
     });
   });
 });
