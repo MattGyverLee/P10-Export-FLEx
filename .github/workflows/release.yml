@@ -17,7 +17,7 @@ jobs:
       - name: Clone paranext-core
         run: |
           cd ..
-          git clone --depth 1 https://github.com/MattGyverLee/paranext-core.git
+          git clone --depth 1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/MattGyverLee/paranext-core.git
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
