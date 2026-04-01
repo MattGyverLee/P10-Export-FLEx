@@ -130,27 +130,32 @@ namespace FlexTextBridge.Services
             if (string.IsNullOrEmpty(textName))
                 throw new ArgumentException("Text name cannot be empty", nameof(textName));
 
-            // Check for existing text
-            if (TextExists(textName))
-            {
-                if (overwrite)
-                {
-                    DeleteText(textName);
-                }
-                else
-                {
-                    throw new InvalidOperationException($"Text '{textName}' already exists");
-                }
-            }
-
-            // Get writing system handles
+            // Get writing system handles before transaction
             int analWs = _cache.DefaultAnalWs;
             int vernWs = GetVernacularWsHandle();
             usedVernacularWs = GetVernacularWsCode();
 
             // Begin non-undoable task (required for modifications)
+            // IMPORTANT: Both delete and create happen in the SAME transaction
+            // to ensure atomicity and prevent "deleted object" errors when FLEx has the old text cached
             using (var undoHelper = new UndoableUnitOfWorkHelper(_cache.ActionHandlerAccessor, "Create Text"))
             {
+                // Delete existing text INSIDE the same transaction (if overwriting)
+                if (TextExists(textName))
+                {
+                    if (overwrite)
+                    {
+                        var existingText = FindText(textName);
+                        if (existingText != null)
+                        {
+                            existingText.Delete();
+                        }
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Text '{textName}' already exists");
+                    }
+                }
                 // Get factories
                 var textFactory = _cache.ServiceLocator.GetInstance<ITextFactory>();
                 var stTextFactory = _cache.ServiceLocator.GetInstance<IStTextFactory>();
@@ -206,12 +211,104 @@ namespace FlexTextBridge.Services
                 }
 
                 undoHelper.RollBack = false; // Commit the transaction
+
+                // VERIFICATION: Ensure the text is readable before returning
+                // This catches any issues with the text not being properly committed
+                if (!VerifyTextByGuid(textGuid))
+                {
+                    throw new InvalidOperationException($"Text was created but verification failed for GUID {textGuid}");
+                }
+
                 return (paragraphCount, textGuid);
             }
         }
 
         /// <summary>
-        /// Delete a text by name.
+        /// Verify that a text exists and is accessible by its GUID.
+        /// This is a passive check to ensure the text is fully committed and readable.
+        /// </summary>
+        /// <param name="textGuid">The GUID of the text to verify</param>
+        /// <returns>True if the text exists and has valid content structure</returns>
+        public bool VerifyTextByGuid(Guid textGuid)
+        {
+            try
+            {
+                var textRepo = _cache.ServiceLocator.GetInstance<ITextRepository>();
+                var text = textRepo.AllInstances().FirstOrDefault(t => t.Guid == textGuid);
+
+                if (text == null)
+                {
+                    return false;
+                }
+
+                // Verify the text has a valid content container
+                if (text.ContentsOA == null)
+                {
+                    return false;
+                }
+
+                // Verify at least one paragraph exists
+                if (text.ContentsOA.ParagraphsOS.Count == 0)
+                {
+                    return false;
+                }
+
+                // Try to access the name to ensure it's readable
+                var name = text.Name.get_String(_cache.DefaultAnalWs)?.Text;
+                if (string.IsNullOrEmpty(name))
+                {
+                    return false;
+                }
+
+                return true;
+            }
+            catch
+            {
+                // Any exception during verification means the text is not accessible
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Get detailed verification info for a text by GUID.
+        /// Returns null if text doesn't exist.
+        /// </summary>
+        public TextVerificationInfo GetTextVerificationInfo(Guid textGuid)
+        {
+            try
+            {
+                var textRepo = _cache.ServiceLocator.GetInstance<ITextRepository>();
+                var text = textRepo.AllInstances().FirstOrDefault(t => t.Guid == textGuid);
+
+                if (text == null)
+                {
+                    return null;
+                }
+
+                return new TextVerificationInfo
+                {
+                    Guid = textGuid,
+                    Name = text.Name.get_String(_cache.DefaultAnalWs)?.Text,
+                    HasContent = text.ContentsOA != null,
+                    ParagraphCount = text.ContentsOA?.ParagraphsOS.Count ?? 0,
+                    IsAccessible = true
+                };
+            }
+            catch (Exception ex)
+            {
+                return new TextVerificationInfo
+                {
+                    Guid = textGuid,
+                    IsAccessible = false,
+                    Error = ex.Message
+                };
+            }
+        }
+
+        /// <summary>
+        /// Delete a text by name (standalone operation with its own transaction).
+        /// Note: For overwrite scenarios, deletion is now handled inside CreateText
+        /// to ensure atomicity.
         /// </summary>
         public void DeleteText(string textName)
         {
@@ -239,6 +336,19 @@ namespace FlexTextBridge.Services
                 .OrderBy(n => n)
                 .ToList();
         }
+    }
+
+    /// <summary>
+    /// Information about a text's verification status.
+    /// </summary>
+    public class TextVerificationInfo
+    {
+        public Guid Guid { get; set; }
+        public string Name { get; set; }
+        public bool HasContent { get; set; }
+        public int ParagraphCount { get; set; }
+        public bool IsAccessible { get; set; }
+        public string Error { get; set; }
     }
 
     /// <summary>

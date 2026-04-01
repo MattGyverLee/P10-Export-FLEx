@@ -93,6 +93,27 @@ namespace FlexTextBridge.Models
     }
 
     /// <summary>
+    /// Result for the verify text command.
+    /// </summary>
+    public class VerifyTextResult : CommandResult
+    {
+        [JsonProperty("guid", NullValueHandling = NullValueHandling.Ignore)]
+        public string Guid { get; set; }
+
+        [JsonProperty("textName", NullValueHandling = NullValueHandling.Ignore)]
+        public string TextName { get; set; }
+
+        [JsonProperty("isAccessible")]
+        public bool IsAccessible { get; set; }
+
+        [JsonProperty("hasContent")]
+        public bool HasContent { get; set; }
+
+        [JsonProperty("paragraphCount")]
+        public int ParagraphCount { get; set; }
+    }
+
+    /// <summary>
     /// Error codes for CLI operations.
     /// </summary>
     public static class ErrorCodes
@@ -104,6 +125,8 @@ namespace FlexTextBridge.Models
         public const string TextExists = "TEXT_EXISTS";
         public const string WriteFailed = "WRITE_FAILED";
         public const string InitializationFailed = "INITIALIZATION_FAILED";
+        public const string TextNotFound = "TEXT_NOT_FOUND";
+        public const string TextNotAccessible = "TEXT_NOT_ACCESSIBLE";
         public const string UnknownError = "UNKNOWN_ERROR";
     }
 }

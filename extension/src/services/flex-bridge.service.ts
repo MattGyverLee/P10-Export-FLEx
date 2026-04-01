@@ -63,6 +63,20 @@ export interface CreateTextResult {
 }
 
 /**
+ * Result from verifying a text by GUID
+ */
+export interface VerifyTextResult {
+  success: boolean;
+  guid?: string;
+  textName?: string;
+  isAccessible: boolean;
+  hasContent: boolean;
+  paragraphCount: number;
+  error?: string;
+  errorCode?: string;
+}
+
+/**
  * Error codes returned by the bridge CLI
  */
 export const ErrorCodes = {
@@ -72,6 +86,8 @@ export const ErrorCodes = {
   InvalidUsj: "INVALID_USJ",
   TextExists: "TEXT_EXISTS",
   WriteFailed: "WRITE_FAILED",
+  TextNotFound: "TEXT_NOT_FOUND",
+  TextNotAccessible: "TEXT_NOT_ACCESSIBLE",
   UnknownError: "UNKNOWN_ERROR",
 } as const;
 
@@ -269,6 +285,30 @@ export class FlexBridgeService {
     } catch (error) {
       // On error, return default navigation
       return { tool: "default" };
+    }
+  }
+
+  /**
+   * Verify that a text exists and is accessible by its GUID.
+   * This is a passive check to ensure a newly created/overwritten text is ready before navigation.
+   * @param projectName Name of the FLEx project
+   * @param textGuid GUID of the text to verify
+   * @returns Verification result with accessibility status
+   */
+  async verifyText(projectName: string, textGuid: string): Promise<VerifyTextResult> {
+    try {
+      const args = ["--verify-text", "--project", projectName, "--guid", textGuid];
+      const output = await this.runBridge(args);
+      return JSON.parse(output) as VerifyTextResult;
+    } catch (error) {
+      return {
+        success: false,
+        isAccessible: false,
+        hasContent: false,
+        paragraphCount: 0,
+        error: `Failed to verify text: ${error instanceof Error ? error.message : String(error)}`,
+        errorCode: ErrorCodes.UnknownError,
+      };
     }
   }
 

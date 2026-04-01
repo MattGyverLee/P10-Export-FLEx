@@ -45,6 +45,43 @@ function ModalFooter({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Export progress step types
+type ExportStep = {
+  id: string;
+  label: string;
+  status: 'pending' | 'active' | 'done' | 'warning' | 'error';
+};
+
+function ExportProgressBar({ steps }: { steps: ExportStep[] }) {
+  if (!steps.length) return null;
+
+  const activeStep = steps.find(s => s.status === 'active');
+
+  return (
+    <div className="tw-mt-2 tw-mb-2">
+      <div className="tw-flex tw-gap-1 tw-mb-1">
+        {steps.map((step) => (
+          <div
+            key={step.id}
+            className={`tw-h-2 tw-flex-1 tw-rounded-sm tw-transition-colors tw-duration-300 ${
+              step.status === 'done' ? 'tw-bg-green-600' :
+              step.status === 'active' ? 'tw-bg-blue-500 tw-animate-pulse' :
+              step.status === 'warning' ? 'tw-bg-yellow-500' :
+              step.status === 'error' ? 'tw-bg-red-500' :
+              'tw-bg-gray-300'
+            }`}
+          />
+        ))}
+      </div>
+      {activeStep && (
+        <div className="tw-text-xs tw-text-muted-foreground">
+          {activeStep.label}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // FLEx project types (matching bridge service)
 interface FlexProjectInfo {
   name: string;
@@ -81,6 +118,28 @@ type WritingSystemOption = {
 type ProjectOption = {
   label: string;
   id: string;
+};
+
+// Per-project export settings (stored in WebView state)
+interface ProjectExportSettings {
+  flexProjectName: string;
+  writingSystemCode: string;
+  includeFootnotes: boolean;
+  includeCrossRefs: boolean;
+  includeIntro: boolean;
+  includeRemarks: boolean;
+  includeFigures: boolean;
+}
+
+// Default settings for new projects
+const DEFAULT_PROJECT_SETTINGS: ProjectExportSettings = {
+  flexProjectName: "",
+  writingSystemCode: "",
+  includeFootnotes: false,
+  includeCrossRefs: false,
+  includeIntro: false,
+  includeRemarks: false,
+  includeFigures: true,
 };
 
 // Default scripture reference
@@ -193,76 +252,36 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // End chapter for range selection (defaults to start chapter)
   const [endChapter, setEndChapter] = useState(initialScrRef?.chapterNum || 1);
 
-  // Per-project settings storage - keyed by Paratext project ID
-  // This stores a map of project IDs to their export settings
-  interface ProjectExportSettings {
-    flexProjectName: string;
-    writingSystemCode: string;
-    includeFootnotes: boolean;
-    includeCrossRefs: boolean;
-    includeIntro: boolean;
-    includeRemarks: boolean;
-    includeFigures: boolean;
-  }
-
-  const defaultSettings: ProjectExportSettings = {
-    flexProjectName: "",
-    writingSystemCode: "",
-    includeFootnotes: false,
-    includeCrossRefs: false,
-    includeIntro: false,
-    includeRemarks: false,
-    includeFigures: true,
-  };
-
-  // Store all project settings in a single WebView state map
-  const [allProjectSettings, setAllProjectSettings] = useWebViewState<Record<string, ProjectExportSettings>>(
-    "projectSettings",
-    {}
+  // Per-project settings using flat WebView state keys (avoids nested object serialization issues)
+  // Each setting uses a compound key: "settingName-projectId"
+  const [savedFlexProjectName, setSavedFlexProjectName] = useWebViewState<string>(
+    `flexProjectName-${projectId || "default"}`,
+    ""
   );
-
-  // Get settings for the current project (or defaults if none saved)
-  const currentSettings = useMemo(() => {
-    if (!projectId) return defaultSettings;
-    return allProjectSettings[projectId] || defaultSettings;
-  }, [projectId, allProjectSettings]);
-
-  // Helper to update a single setting for the current project
-  const updateSetting = useCallback(<K extends keyof ProjectExportSettings>(
-    key: K,
-    value: ProjectExportSettings[K]
-  ) => {
-    if (!projectId) return;
-    setAllProjectSettings((prev: Record<string, ProjectExportSettings>) => ({
-      ...prev,
-      [projectId]: {
-        ...(prev[projectId] || defaultSettings),
-        [key]: value,
-      },
-    }));
-  }, [projectId, setAllProjectSettings]);
-
-  // Convenience accessors for individual settings
-  const savedFlexProjectName = currentSettings.flexProjectName;
-  const setSavedFlexProjectName = useCallback((v: string) => updateSetting("flexProjectName", v), [updateSetting]);
-
-  const savedWritingSystemCode = currentSettings.writingSystemCode;
-  const setSavedWritingSystemCode = useCallback((v: string) => updateSetting("writingSystemCode", v), [updateSetting]);
-
-  const includeFootnotes = currentSettings.includeFootnotes;
-  const setIncludeFootnotes = useCallback((v: boolean) => updateSetting("includeFootnotes", v), [updateSetting]);
-
-  const includeCrossRefs = currentSettings.includeCrossRefs;
-  const setIncludeCrossRefs = useCallback((v: boolean) => updateSetting("includeCrossRefs", v), [updateSetting]);
-
-  const includeIntro = currentSettings.includeIntro;
-  const setIncludeIntro = useCallback((v: boolean) => updateSetting("includeIntro", v), [updateSetting]);
-
-  const includeRemarks = currentSettings.includeRemarks;
-  const setIncludeRemarks = useCallback((v: boolean) => updateSetting("includeRemarks", v), [updateSetting]);
-
-  const includeFigures = currentSettings.includeFigures;
-  const setIncludeFigures = useCallback((v: boolean) => updateSetting("includeFigures", v), [updateSetting]);
+  const [savedWritingSystemCode, setSavedWritingSystemCode] = useWebViewState<string>(
+    `writingSystemCode-${projectId || "default"}`,
+    ""
+  );
+  const [includeFootnotes, setIncludeFootnotes] = useWebViewState<boolean>(
+    `includeFootnotes-${projectId || "default"}`,
+    false
+  );
+  const [includeCrossRefs, setIncludeCrossRefs] = useWebViewState<boolean>(
+    `includeCrossRefs-${projectId || "default"}`,
+    false
+  );
+  const [includeIntro, setIncludeIntro] = useWebViewState<boolean>(
+    `includeIntro-${projectId || "default"}`,
+    false
+  );
+  const [includeRemarks, setIncludeRemarks] = useWebViewState<boolean>(
+    `includeRemarks-${projectId || "default"}`,
+    false
+  );
+  const [includeFigures, setIncludeFigures] = useWebViewState<boolean>(
+    `includeFigures-${projectId || "default"}`,
+    true
+  );
 
   // Overwrite setting - independent of project selection (stored in global WebView state)
   const [overwriteEnabled, setOverwriteEnabled] = useWebViewState<boolean>("overwriteEnabled", false);
@@ -288,6 +307,12 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // Export state
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState<{ success: boolean; message: string } | undefined>();
+  const [exportSteps, setExportSteps] = useState<ExportStep[]>([]);
+
+  // Helper to update a single export step's status
+  const updateStep = useCallback((stepId: string, status: ExportStep['status']) => {
+    setExportSteps(prev => prev.map(s => s.id === stepId ? { ...s, status } : s));
+  }, []);
 
   // Last exported text info for "Open in FLEx" button
   const [lastExportedText, setLastExportedText] = useState<{ projectName: string; textGuid: string } | undefined>();
@@ -328,6 +353,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   const [includeResources, setIncludeResources] = useState(false);
 
   // Get the saved FLEx project name (handle potential error)
+  if (isPlatformError(savedFlexProjectName)) {
+    console.log('[Persistence] Auto-heal: PlatformError on savedFlexProjectName, using default');
+  }
   const savedFlexProject = isPlatformError(savedFlexProjectName) ? "" : savedFlexProjectName;
 
   // Load FLEx projects on mount
@@ -351,12 +379,24 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             setFlexProjects(options);
 
             // Restore saved FLEx project selection if available
-            if (savedFlexProject) {
-              const savedOption = options.find((p) => p.name === savedFlexProject);
+            console.log('[Persistence] Attempting to restore FLEx project. Saved name:', savedFlexProjectName, 'Available options:', options.length);
+            if (savedFlexProjectName) {
+              const savedOption = options.find((p) => p.name === savedFlexProjectName);
               if (savedOption) {
+                console.log('[Persistence] Restored FLEx project:', savedOption.label);
                 setSelectedFlexProject(savedOption);
+              } else {
+                console.log('[Persistence] Auto-heal: FLEx project not found, resetting:', savedFlexProjectName);
+                setSavedFlexProjectName("");
               }
             }
+
+            // Preload project details in background for faster switching
+            // Fire-and-forget - don't await, just start loading
+            const projectNames = projects.map(p => p.name);
+            papi.commands.sendCommand("flexExport.preloadFlexProjectInfo", projectNames)
+              .then(() => console.log('[Preload] Background preloading complete'))
+              .catch((err: unknown) => console.log('[Preload] Background preloading failed:', err));
           } else {
             // No projects found - FLEx may not be installed or no projects exist
             setFlexProjects([]);
@@ -381,9 +421,12 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     return () => {
       cancelled = true;
     };
-  }, [savedFlexProject]);
+  }, [savedFlexProjectName]);
 
   // Get the saved writing system code (handle potential error)
+  if (isPlatformError(savedWritingSystemCode)) {
+    console.log('[Persistence] Auto-heal: PlatformError on savedWritingSystemCode, using default');
+  }
   const savedWsCode = isPlatformError(savedWritingSystemCode) ? "" : savedWritingSystemCode;
 
   // Load FLEx project details when a project is selected
@@ -406,17 +449,31 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         if (!cancelled && details) {
           setFlexProjectDetails(details);
 
-          // Try to restore saved writing system, fall back to default
+          // Select writing system: restore saved, or use default/only available
+          const wsCount = details.vernacularWritingSystems?.length || 0;
+          console.log('[WS] Available writing systems:', wsCount);
           let wsToSelect: WritingSystemInfo | undefined;
 
-          if (savedWsCode && details.vernacularWritingSystems) {
+          if (wsCount === 1) {
+            // Only one WS available - use it automatically (no selector shown)
+            wsToSelect = details.vernacularWritingSystems?.[0];
+            console.log('[WS] Auto-selecting only available writing system:', wsToSelect?.code);
+          } else if (savedWsCode && details.vernacularWritingSystems) {
+            // Multiple WS - try to restore saved selection
             wsToSelect = details.vernacularWritingSystems.find((ws) => ws.code === savedWsCode);
+            if (wsToSelect) {
+              console.log('[WS] Restored saved writing system:', wsToSelect.code);
+            } else {
+              console.log('[Persistence] Auto-heal: WS not found, resetting:', savedWsCode);
+              setSavedWritingSystemCode("");
+            }
           }
 
           // If no saved WS or saved WS not found, use default
-          if (!wsToSelect) {
+          if (!wsToSelect && wsCount > 1) {
             wsToSelect = details.vernacularWritingSystems?.find((ws) => ws.isDefault)
               || details.vernacularWritingSystems?.[0];
+            console.log('[WS] Using default writing system:', wsToSelect?.code);
           }
 
           if (wsToSelect) {
@@ -427,6 +484,27 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             });
           } else {
             setSelectedWritingSystem(undefined);
+          }
+
+          // Navigate FLEx away from Texts if running (fire-and-forget)
+          // This ensures FLEx is on the Lexicon well before the user clicks Export,
+          // avoiding stale-object errors when overwriting texts.
+          if (!cancelled) {
+            try {
+              const flexStatus = await papi.commands.sendCommand(
+                "flexExport.checkFlexStatus",
+                selectedFlexProject.name
+              ) as { isRunning: boolean; sharingEnabled: boolean };
+
+              if (flexStatus.isRunning && flexStatus.sharingEnabled) {
+                const lexiconLink = `silfw://localhost/link?database%3d${encodeURIComponent(selectedFlexProject.name)}%26tool%3dlexiconEdit%26tag%3d`;
+                console.log('[Navigate] FLEx is running with sharing - navigating to Lexicon');
+                papi.commands.sendCommand('flexExport.navigateFlex', lexiconLink)
+                  .catch((navErr: unknown) => console.warn('[Navigate] Lexicon navigation failed:', navErr));
+              }
+            } catch (navCheckErr) {
+              console.warn('[Navigate] Could not check FLEx status for early navigation:', navCheckErr);
+            }
           }
         }
       } catch (err) {
@@ -442,6 +520,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   }, [selectedFlexProject, savedWsCode]);
 
   // Auto-generate text name from book and chapter range
+  // Includes Paratext project code as suffix (e.g., "1 John 5 - BVM")
   useEffect(() => {
     if (!scrRef.book) return;
 
@@ -454,8 +533,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       generatedName = `${bookName} ${scrRef.chapterNum}-${endChapter}`;
     }
 
+    // Append Paratext project code if available
+    if (selectedProject?.label) {
+      generatedName = `${generatedName} - ${selectedProject.label}`;
+    }
+
     setTextName(generatedName);
-  }, [scrRef.book, scrRef.chapterNum, endChapter]);
+  }, [scrRef.book, scrRef.chapterNum, endChapter, selectedProject]);
 
   // Check text name in real-time to show expected export name
   useEffect(() => {
@@ -640,23 +724,27 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // Handle FLEx project selection
   const handleFlexProjectChange = useCallback(
     (option: FlexProjectOption | undefined) => {
-      setSelectedFlexProject(option);
-      setExportStatus(undefined);
-      // Persist the selection to project settings
-      setSavedFlexProjectName(option?.name || "");
+      if (option) {
+        setSelectedFlexProject(option);
+      }
     },
-    [setSavedFlexProjectName]
+    []
   );
 
   // Handle writing system selection
   const handleWritingSystemChange = useCallback(
     (option: WritingSystemOption | undefined) => {
-      setSelectedWritingSystem(option);
-      // Persist the selection to project settings
-      setSavedWritingSystemCode(option?.code || "");
+      if (option) {
+        setSelectedWritingSystem(option);
+      }
     },
-    [setSavedWritingSystemCode]
+    []
   );
+
+  // Clear export status when FLEx project changes
+  useEffect(() => {
+    setExportStatus(undefined);
+  }, [selectedFlexProject]);
 
   // Writing system options with default label (convert WritingSystemInfo to WritingSystemOption)
   const writingSystemOptions = useMemo((): WritingSystemOption[] => {
@@ -1069,6 +1157,30 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     setExportStatus(undefined);
     setLastExportedText(undefined);
 
+    // Initialize progress steps
+    const steps: ExportStep[] = [
+      { id: 'export', label: 'Exporting text...', status: 'active' },
+      { id: 'verify', label: 'Verifying text...', status: 'pending' },
+      { id: 'complete', label: 'Complete', status: 'pending' },
+    ];
+    setExportSteps(steps);
+
+    // Save settings at start of export (so they persist even if export fails)
+    try {
+      if (selectedFlexProject && selectedWritingSystem) {
+        console.log('[Persistence] Export starting - saving settings for Paratext project:', projectId);
+        setSavedFlexProjectName(selectedFlexProject.name);
+        setSavedWritingSystemCode(selectedWritingSystem.code);
+        setIncludeFootnotes(includeFootnotes);
+        setIncludeCrossRefs(includeCrossRefs);
+        setIncludeIntro(includeIntro);
+        setIncludeRemarks(includeRemarks);
+        setIncludeFigures(includeFigures);
+      }
+    } catch (saveErr) {
+      console.warn('[Persistence] Failed to save settings at export start:', saveErr);
+    }
+
     try {
       // Check if FLEx is running and if project sharing is enabled
       const flexStatus = await papi.commands.sendCommand(
@@ -1084,41 +1196,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           success: false,
           message: "FieldWorks is open without sharing enabled. Please close FLEx or enable Project Sharing in Edit > Project Properties > Sharing tab."
         });
+        updateStep('export', 'error');
         setIsExporting(false);
         return;
       }
 
-      // If FLEx is running WITH sharing enabled and we're overwriting, use safe redirect workflow
-      if (flexStatus.isRunning && flexStatus.sharingEnabled && overwriteEnabled) {
-        console.log('Using safe redirect workflow...');
-
-        // 1. Get a safe navigation target
-        const navTarget = await papi.commands.sendCommand(
-          "flexExport.getSafeNavigationTarget",
-          selectedFlexProject.name,
-          nameToUse
-        ) as { guid?: string; tool: string };
-
-        console.log('Navigation target:', navTarget);
-
-        // 2. Navigate FLEx away from the target text
-        // Use the format that worked during testing: database%3d...%26tool%3d...%26guid%3d...%26tag%3d
-        const deepLink = navTarget.guid
-          ? `silfw://localhost/link?database%3d${encodeURIComponent(selectedFlexProject.name)}%26tool%3d${navTarget.tool}%26guid%3d${navTarget.guid}%26tag%3d`
-          : `silfw://localhost/link?database%3d${encodeURIComponent(selectedFlexProject.name)}%26tool%3d${navTarget.tool}%26tag%3d`;
-
-        console.log('Navigating away with deep link:', deepLink);
-
-        try {
-          await papi.commands.sendCommand('flexExport.navigateFlex', deepLink);
-          console.log('Deep link navigation initiated');
-        } catch (navErr) {
-          console.error('Deep link navigation failed:', navErr);
-        }
-
-        // 3. Wait for navigation to complete (give FLEx time to fully switch views and release the old text)
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
+      // Note: FLEx navigation is handled early (when project details load), not at export time.
+      // By the time the user clicks Export, FLEx has already been moved to the Lexicon.
 
       // Filter USJ content based on toggles before export
       const filteredChapters = chaptersUSJ.map((chapter, idx) => {
@@ -1144,6 +1228,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       ) as { success: boolean; paragraphCount?: number; textName?: string; textGuid?: string; error?: string; errorCode?: string; suggestedName?: string };
 
       if (result.success) {
+        updateStep('export', 'done');
+        updateStep('verify', 'active');
+
         const successMessage = (localizedStrings["%flexExport_exportSuccess%"] || "Successfully exported {paragraphCount} paragraphs to \"{textName}\"")
           .replace("{paragraphCount}", String(result.paragraphCount || 0))
           .replace("{textName}", result.textName || nameToUse);
@@ -1156,41 +1243,45 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             textGuid: result.textGuid
           });
 
-          // If FLEx is running with sharing, navigate back to the Texts tool (without specific GUID)
-          // This avoids cache timing issues - the user can select the text from the list
+          // Verify text is accessible (confirms export fully committed)
           if (flexStatus.isRunning && flexStatus.sharingEnabled) {
-            // Wait for FLEx to fully commit the changes before navigating
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            console.log('Verifying text is accessible...');
+            const maxRetries = 5;
+            let textVerified = false;
 
-            // Navigate to interlinearEdit tool without a specific GUID - just opens the Texts area
-            const textToolLink = `silfw://localhost/link?database%3d${encodeURIComponent(selectedFlexProject.name)}%26tool%3dinterlinearEdit%26tag%3d`;
-            console.log('Navigating to Texts tool with deep link:', textToolLink);
+            for (let i = 0; i < maxRetries; i++) {
+              try {
+                const verifyResult = await papi.commands.sendCommand(
+                  'flexExport.verifyText',
+                  selectedFlexProject.name,
+                  result.textGuid
+                ) as { success: boolean; isAccessible: boolean; paragraphCount: number };
 
-            try {
-              await papi.commands.sendCommand('flexExport.navigateFlex', textToolLink);
-              console.log('Navigation to Texts tool initiated');
-
-              // Optionally try to navigate to the specific created text
-              // If it fails (GUID not ready), we'll just stay in Texts area
-              if (result.textGuid) {
-                await new Promise(resolve => setTimeout(resolve, 500)); // Brief wait for Texts to load
-                const specificTextLink = `silfw://localhost/link?database%3d${encodeURIComponent(selectedFlexProject.name)}%26tool%3dinterlinearEdit%26guid%3d${result.textGuid}%26tag%3d`;
-                console.log('Attempting to navigate to specific text:', specificTextLink);
-
-                try {
-                  await papi.commands.sendCommand('flexExport.navigateFlex', specificTextLink);
-                  console.log('Successfully navigated to specific text');
-                } catch (specificNavErr) {
-                  console.log('Could not navigate to specific text (GUID not ready yet), staying in Texts area');
-                  // Silently fail - user can click the text from the list
+                if (verifyResult.success && verifyResult.isAccessible) {
+                  console.log(`Text verified on attempt ${i + 1}: ${verifyResult.paragraphCount} paragraphs`);
+                  textVerified = true;
+                  break;
                 }
+              } catch (verifyErr) {
+                console.log(`Verification attempt ${i + 1} failed:`, verifyErr);
               }
-            } catch (navErr) {
-              console.error('Failed to navigate to Texts tool:', navErr);
+
+              // Wait before retry
+              await new Promise(resolve => setTimeout(resolve, 500));
             }
+
+            updateStep('verify', textVerified ? 'done' : 'warning');
+          } else {
+            updateStep('verify', 'done');
           }
+        } else {
+          updateStep('verify', 'done');
         }
+
+        updateStep('complete', 'done');
       } else {
+        updateStep('export', 'error');
+
         // Check if it's a TEXT_EXISTS error and overwrite is disabled
         if (result.errorCode === "TEXT_EXISTS" && !overwriteEnabled) {
           // Use the suggested name from the bridge (it already checked what exists)
@@ -1211,6 +1302,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       }
     } catch (err) {
       console.error('Export error:', err);
+      updateStep('export', 'error');
 
       // Extract error message from various error formats
       let errorText = "Unknown error";
@@ -1231,8 +1323,10 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       setExportStatus({ success: false, message: errorMessage });
     } finally {
       setIsExporting(false);
+      // Clear progress steps after a delay so user can see final state
+      setTimeout(() => setExportSteps([]), 5000);
     }
-  }, [selectedFlexProject, textName, chaptersUSJ, overwriteEnabled, showOverwriteConfirm, selectedWritingSystem, scrRef.chapterNum, filterUsjContent, localizedStrings, generateUniqueName]);
+  }, [selectedFlexProject, textName, chaptersUSJ, overwriteEnabled, showOverwriteConfirm, selectedWritingSystem, scrRef.chapterNum, filterUsjContent, localizedStrings, generateUniqueName, updateStep]);
 
   // Cancel overwrite confirmation
   const handleCancelOverwrite = useCallback(() => {
@@ -1467,34 +1561,32 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                 </Label>
                 <ComboBox<FlexProjectOption>
                   id="flex-project-selector"
-                  options={flexProjects}
+                  options={flexProjects || []}
                   value={selectedFlexProject}
                   onChange={handleFlexProjectChange}
                   getOptionLabel={(option: FlexProjectOption) => option.label}
-                  buttonPlaceholder={isLoadingFlexProjects
-                    ? localizedStrings["%flexExport_loadingFlexProjects%"]
-                    : flexLoadError
-                      ? localizedStrings["%flexExport_flexNotAvailable%"]
-                      : localizedStrings["%flexExport_selectFlexProject%"]}
+                  buttonPlaceholder={localizedStrings["%flexExport_selectFlexProject%"]}
                   textPlaceholder={localizedStrings["%flexExport_searchFlexProjects%"]}
                   commandEmptyMessage={localizedStrings["%flexExport_noFlexProjectsFound%"]}
                   buttonVariant="outline"
-                  disabled={!!flexLoadError}
                 />
               </div>
 
-              {/* Writing System Selector */}
-              {flexProjectDetails && writingSystemOptions.length > 0 && (
+              {/* Writing System Selector - only shown when multiple vernacular WS exist */}
+              {flexProjectDetails && writingSystemOptions.length > 1 && (
                 <div id="writing-system-row" className="tw-flex tw-items-center tw-gap-3">
                   <Label id="writing-system-label" htmlFor="writing-system-selector" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap">
                     {localizedStrings["%flexExport_writingSystem%"]}
                   </Label>
                   <ComboBox<WritingSystemOption>
                     id="writing-system-selector"
-                    options={writingSystemOptions}
+                    options={writingSystemOptions || []}
                     value={selectedWritingSystem}
                     onChange={handleWritingSystemChange}
                     getOptionLabel={(ws: WritingSystemOption) => ws.label}
+                    buttonPlaceholder={localizedStrings["%flexExport_writingSystem%"]}
+                    textPlaceholder={localizedStrings["%flexExport_searchWritingSystems%"] || "Search writing systems..."}
+                    commandEmptyMessage={localizedStrings["%flexExport_noWritingSystemsFound%"] || "No writing systems found"}
                     buttonVariant="outline"
                   />
                 </div>
@@ -1545,6 +1637,11 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                     ? localizedStrings["%flexExport_exporting%"]
                     : localizedStrings["%flexExport_export%"]}
                 </Button>
+
+                {/* Progress bar shown during export */}
+                {exportSteps.length > 0 && (
+                  <ExportProgressBar steps={exportSteps} />
+                )}
 
                 {exportStatus && (
                   <div className="tw-flex tw-items-center tw-gap-3">

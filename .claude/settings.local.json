@@ -17,7 +17,8 @@
       "Bash(node:*)",
       "Bash(npm run lint)",
       "Bash(./FlexTextBridge.exe:*)",
-      "Bash(start \"silfw://localhost/link?database%3dTest%26tool%3dinterlinearEdit%26guid%3d4baddaa8-27ff-40c4-b027-d4009c5d8799%26tag%3d\")"
+      "Bash(start \"silfw://localhost/link?database%3dTest%26tool%3dinterlinearEdit%26guid%3d4baddaa8-27ff-40c4-b027-d4009c5d8799%26tag%3d\")",
+      "WebFetch(domain:ubsicap.github.io)"
     ]
   }
 }

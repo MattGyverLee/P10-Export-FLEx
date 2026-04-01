@@ -1,0 +1,50 @@
+name: Manual Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.1.0)'
+        required: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x'
+
+      - name: Install extension dependencies
+        run: |
+          cd extension
+          npm install
+
+      - name: Build package
+        run: |
+          cd extension
+          npm run package
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          body: |
+            Release v${{ github.event.inputs.version }}
+
+            ## Installation
+            1. Download `flex-export_*.zip`
+            2. Extract to: `%LOCALAPPDATA%\Programs\paratext-10-studio\resources\extensions\flex-export`
+            3. Restart Paratext Studio
+          files: extension/release/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

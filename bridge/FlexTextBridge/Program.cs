@@ -89,11 +89,13 @@ namespace FlexTextBridge
 
             string project = null;
             string title = null;
+            string textGuid = null;
             string vernacularWs = null;
             bool overwrite = false;
             bool listProjects = false;
             bool projectInfo = false;
             bool checkText = false;
+            bool verifyText = false;
             bool checkFlexStatus = false;
             bool getSafeTarget = false;
             bool showVersion = false;
@@ -116,6 +118,16 @@ namespace FlexTextBridge
                     case "--check-text":
                     case "-c":
                         checkText = true;
+                        break;
+
+                    case "--verify-text":
+                        verifyText = true;
+                        break;
+
+                    case "--guid":
+                    case "-g":
+                        if (i + 1 < args.Length)
+                            textGuid = args[++i];
                         break;
 
                     case "--check-flex-status":
@@ -187,6 +199,12 @@ namespace FlexTextBridge
                 return command.Execute();
             }
 
+            if (verifyText && !string.IsNullOrEmpty(project) && !string.IsNullOrEmpty(textGuid))
+            {
+                var command = new VerifyTextCommand(project, textGuid);
+                return command.Execute();
+            }
+
             if (checkFlexStatus && !string.IsNullOrEmpty(project))
             {
                 var command = new CheckFlexStatusCommand(project);
@@ -224,6 +242,7 @@ namespace FlexTextBridge
             Console.Error.WriteLine("  FlexTextBridge --list-projects");
             Console.Error.WriteLine("  FlexTextBridge --project-info --project <name>");
             Console.Error.WriteLine("  FlexTextBridge --check-text --project <name> --title <title>");
+            Console.Error.WriteLine("  FlexTextBridge --verify-text --project <name> --guid <guid>");
             Console.Error.WriteLine("  FlexTextBridge --check-flex-status --project <name>");
             Console.Error.WriteLine("  FlexTextBridge --get-safe-target --project <name> --title <title>");
             Console.Error.WriteLine("  FlexTextBridge --project <name> --title <title> [--vernacular-ws <code>] [--overwrite] < scripture.json");
@@ -232,10 +251,12 @@ namespace FlexTextBridge
             Console.Error.WriteLine("  -l, --list-projects          List all FLEx projects on the system");
             Console.Error.WriteLine("  -i, --project-info           Get detailed info for a project (requires --project)");
             Console.Error.WriteLine("  -c, --check-text             Check if text name exists and get suggested alternative");
+            Console.Error.WriteLine("      --verify-text            Verify text exists and is accessible by GUID");
             Console.Error.WriteLine("      --check-flex-status      Check if FLEx is running and if project sharing is enabled");
             Console.Error.WriteLine("      --get-safe-target        Find safe navigation target for overwrite workflow");
             Console.Error.WriteLine("  -p, --project <name>         Name of the FLEx project to use");
             Console.Error.WriteLine("  -t, --title <title>          Title for the new text (e.g., 'Mark 01-03')");
+            Console.Error.WriteLine("  -g, --guid <guid>            Text GUID for verification");
             Console.Error.WriteLine("  -w, --vernacular-ws <ws>     Vernacular writing system code (defaults to project default)");
             Console.Error.WriteLine("  -o, --overwrite              Overwrite existing text with the same name");
             Console.Error.WriteLine("  -v, --version                Display version information");
@@ -245,6 +266,7 @@ namespace FlexTextBridge
             Console.Error.WriteLine("  FlexTextBridge --list-projects");
             Console.Error.WriteLine("  FlexTextBridge --project-info --project MyProject");
             Console.Error.WriteLine("  FlexTextBridge --check-text --project MyProject --title \"Mark 01\"");
+            Console.Error.WriteLine("  FlexTextBridge --verify-text --project MyProject --guid \"12345678-1234-1234-1234-123456789abc\"");
             Console.Error.WriteLine("  type scripture.json | FlexTextBridge --project MyProject --title \"Genesis 01\"");
             Console.Error.WriteLine("  type scripture.json | FlexTextBridge --project MyProject --title \"Genesis 01\" --vernacular-ws arz");
         }
