@@ -24,6 +24,11 @@ jobs:
         with:
           dotnet-version: '6.0.x'
 
+      - name: Restore .NET dependencies
+        run: |
+          cd bridge/FlexTextBridge
+          dotnet restore
+
       - name: Clone paranext-core
         run: |
           mkdir -p ../paranextPlugin
