@@ -46,7 +46,7 @@ Write-Host ""
 Write-Host "[1/3] Building extension..." -ForegroundColor Green
 try {
     Push-Location $extensionDir
-    npm run package
+    & npm run package 2>&1 | Out-Host
     Pop-Location
 }
 catch {
