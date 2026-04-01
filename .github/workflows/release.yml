@@ -16,8 +16,8 @@ jobs:
 
       - name: Clone paranext-core
         run: |
-          cd ..
-          git clone --depth 1 https://github.com/paranext/paranext-core.git
+          mkdir -p ../paranextPlugin
+          git clone --depth 1 https://github.com/paranext/paranext-core.git ../paranextPlugin/paranext-core
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
