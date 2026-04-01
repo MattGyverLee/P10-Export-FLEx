@@ -133,6 +133,32 @@ If you need to manually install the extension:
 
 - `npm run build:bridge` - Build just the C# CLI
 
+## Creating a Release
+
+Before creating a release, the bridge CLI must be built locally on Windows with FieldWorks 9 installed:
+
+1. **Build the bridge locally:**
+   ```bash
+   cd bridge/FlexTextBridge
+   dotnet build -c Release
+   ```
+
+2. **Build the full extension locally:**
+   ```bash
+   cd extension
+   npm run build:production
+   ```
+
+3. **Commit the changes** (including the built bridge in `extension/dist/bridge/FlexTextBridge.exe`)
+
+4. **Trigger the GitHub release workflow:**
+   - Go to your repo → Actions → Manual Release
+   - Click "Run workflow"
+   - Enter the version number
+   - The workflow will package and create a GitHub Release
+
+**Note:** The GitHub Actions workflow cannot build the bridge because it requires FieldWorks 9, which is not available in the runner environment. The workflow expects the pre-built `FlexTextBridge.exe` to already be in `extension/dist/bridge/`.
+
 ## Troubleshooting
 
 ### Extension not appearing in Paratext
