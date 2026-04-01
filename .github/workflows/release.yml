@@ -14,11 +14,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Clone paranext-core
-        run: |
-          mkdir -p ../paranextPlugin
-          git clone --depth 1 https://github.com/paranext/paranext-core.git ../paranextPlugin/paranext-core
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -28,6 +23,16 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '6.0.x'
+
+      - name: Clone paranext-core
+        run: |
+          mkdir -p ../paranextPlugin
+          git clone --depth 1 https://github.com/paranext/paranext-core.git ../paranextPlugin/paranext-core
+
+      - name: Install paranext-core dependencies
+        run: |
+          cd ../paranextPlugin/paranext-core
+          npm install
 
       - name: Install extension dependencies
         run: |
