@@ -24,11 +24,6 @@ jobs:
         with:
           dotnet-version: '6.0.x'
 
-      - name: Restore .NET dependencies
-        run: |
-          cd bridge/FlexTextBridge
-          dotnet restore
-
       - name: Clone paranext-core
         run: |
           mkdir -p ../paranextPlugin
@@ -44,10 +39,25 @@ jobs:
           cd extension
           npm install
 
-      - name: Build package
+      - name: Build extension (TypeScript only)
         run: |
           cd extension
-          npm run package
+          cross-env NODE_ENV=production TS_NODE_TRANSPILE_ONLY=false npx webpack
+
+      - name: Create release package
+        run: |
+          cd extension
+          npm run zip
+
+      - name: Verify bridge executable exists
+        run: |
+          if (-not (Test-Path "extension/dist/bridge/FlexTextBridge.exe")) {
+            Write-Host "WARNING: FlexTextBridge.exe not found. The bridge CLI must be built locally on Windows with FieldWorks 9 installed."
+            Write-Host "See DEVELOPER.md for build instructions."
+          } else {
+            Write-Host "FlexTextBridge.exe found in dist/bridge/"
+          }
+        shell: powershell
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
