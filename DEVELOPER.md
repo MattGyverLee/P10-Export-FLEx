@@ -135,29 +135,37 @@ If you need to manually install the extension:
 
 ## Creating a Release
 
-Before creating a release, the bridge CLI must be built locally on Windows with FieldWorks 9 installed:
+### Prerequisites
+- Windows with FieldWorks 9 installed
+- GitHub CLI: https://cli.github.com
+- Node.js 22.16.0+
 
-1. **Build the bridge locally:**
-   ```bash
-   cd bridge/FlexTextBridge
-   dotnet build -c Release
-   ```
+### Release Steps
 
-2. **Build the full extension locally:**
-   ```bash
-   cd extension
-   npm run build:production
-   ```
+**1. Build the bridge locally** (Windows with FieldWorks 9):
+```bash
+cd bridge/FlexTextBridge
+dotnet build -c Release
+```
 
-3. **Commit the changes** (including the built bridge in `extension/dist/bridge/FlexTextBridge.exe`)
+**2. Build and release using the script:**
+```bash
+./scripts/release.ps1 -Version 0.1.0
+```
 
-4. **Trigger the GitHub release workflow:**
-   - Go to your repo → Actions → Manual Release
-   - Click "Run workflow"
-   - Enter the version number
-   - The workflow will package and create a GitHub Release
+This script will:
+- Build the extension
+- Verify the bridge executable exists
+- Create a GitHub release with the zip file uploaded
 
-**Note:** The GitHub Actions workflow cannot build the bridge because it requires FieldWorks 9, which is not available in the runner environment. The workflow expects the pre-built `FlexTextBridge.exe` to already be in `extension/dist/bridge/`.
+Alternatively, do it manually:
+```bash
+cd extension
+npm run package
+gh release create v0.1.0 release/flex-export_0.1.0.zip --title "Release v0.1.0" --notes "See README.md for installation"
+```
+
+**Note:** The bridge CLI requires FieldWorks 9 (Windows only). The compiled `FlexTextBridge.exe` must be built locally and included in `extension/dist/bridge/` before creating a release.
 
 ## Troubleshooting
 
