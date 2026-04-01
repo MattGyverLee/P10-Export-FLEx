@@ -14,6 +14,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Clone paranext-core
+        run: |
+          cd ..
+          git clone --depth 1 https://github.com/MattGyverLee/paranext-core.git
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
