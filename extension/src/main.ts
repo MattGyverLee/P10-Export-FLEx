@@ -282,46 +282,6 @@ export async function activate(context: ExecutionActivationContext) {
     }
   );
 
-  // Register command to preload project details in the background
-  // Call this after getting the project list to warm the cache
-  const preloadFlexProjectInfoPromise = papi.commands.registerCommand(
-    "flexExport.preloadFlexProjectInfo",
-    async (projectNames: string[]): Promise<void> => {
-      if (!flexBridge) return;
-
-      // Filter to only projects not already cached
-      const uncachedProjects = projectNames.filter(name => {
-        const cached = projectInfoCache.get(name);
-        return !cached || (Date.now() - cached.timestamp) >= CACHE_TTL_MS;
-      });
-
-      if (uncachedProjects.length === 0) {
-        logger.debug("All projects already cached");
-        return;
-      }
-
-      logger.debug(`Preloading ${uncachedProjects.length} project(s) in background`);
-
-      // Load projects sequentially to avoid overwhelming the system
-      // (Each load opens a full LCM cache which is resource-intensive)
-      for (const projectName of uncachedProjects) {
-        try {
-          const result = await flexBridge.getProjectInfo(projectName);
-          if (result.success && result.project) {
-            projectInfoCache.set(projectName, {
-              details: result.project,
-              timestamp: Date.now(),
-            });
-            logger.debug(`Preloaded project info for "${projectName}"`);
-          }
-        } catch (error) {
-          // Silently continue - preloading is best-effort
-          logger.debug(`Failed to preload "${projectName}": ${error}`);
-        }
-      }
-    }
-  );
-
   // Register command to check if text name exists and get suggested name
   const checkTextNamePromise = papi.commands.registerCommand(
     "flexExport.checkTextName",
@@ -460,7 +420,6 @@ export async function activate(context: ExecutionActivationContext) {
   context.registrations.add(await openExportDialogPromise);
   context.registrations.add(await listFlexProjectsPromise);
   context.registrations.add(await getFlexProjectInfoPromise);
-  context.registrations.add(await preloadFlexProjectInfoPromise);
   context.registrations.add(await checkTextNamePromise);
   context.registrations.add(await checkFlexStatusPromise);
   context.registrations.add(await getSafeNavigationTargetPromise);

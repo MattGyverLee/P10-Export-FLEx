@@ -5,6 +5,8 @@
  * in the Export to FLEx dialog.
  */
 
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { render, screen, fireEvent } from '@testing-library/react';
 import {
   createMockWebViewProps,
@@ -655,5 +657,30 @@ describe('Test Data Factories', () => {
     expect(chapter.version).toBeDefined();
     expect(chapter.content).toBeDefined();
     expect(chapter.content[0]).toHaveProperty('number', '5');
+  });
+});
+
+// Regression guard for issues #11 and #13:
+// - The export dialog must not eagerly walk every FLEx project on disk to
+//   populate the chooser. The previous implementation called a
+//   `flexExport.preloadFlexProjectInfo` command on mount, which spawned the
+//   bridge once per project to open each project's LCM cache. That bumped
+//   project mtimes and held CPU even after the dialog closed. The bridge now
+//   reads writing-system metadata directly from on-disk files, so the
+//   preload pass is unnecessary AND must not return.
+describe('Eager-preload regression guard (issues #11, #13)', () => {
+  const repoSrc = join(__dirname, '..', '..');
+
+  it('welcome.web-view.tsx does not invoke the preload command', () => {
+    const source = readFileSync(
+      join(repoSrc, 'web-views', 'welcome.web-view.tsx'),
+      'utf8'
+    );
+    expect(source).not.toMatch(/preloadFlexProjectInfo/);
+  });
+
+  it('main.ts does not register the preload command', () => {
+    const source = readFileSync(join(repoSrc, 'main.ts'), 'utf8');
+    expect(source).not.toMatch(/preloadFlexProjectInfo/);
   });
 });

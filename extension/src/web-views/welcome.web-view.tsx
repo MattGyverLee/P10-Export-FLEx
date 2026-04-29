@@ -82,24 +82,25 @@ function ExportProgressBar({ steps }: { steps: ExportStep[] }) {
   );
 }
 
-// FLEx project types (matching bridge service)
-interface FlexProjectInfo {
-  name: string;
-  path: string;
-  vernacularWs: string;
-  analysisWs: string;
-}
-
+// FLEx project types (matching bridge service).
+// The bridge populates writing-system arrays on every list/info response,
+// so list and detail shapes are now identical. See flex-bridge.service.ts.
 interface WritingSystemInfo {
   code: string;
   name: string;
   isDefault: boolean;
 }
 
-interface FlexProjectDetails extends FlexProjectInfo {
+interface FlexProjectInfo {
+  name: string;
+  path: string;
+  vernacularWs: string;
+  analysisWs: string;
   vernacularWritingSystems: WritingSystemInfo[];
   analysisWritingSystems: WritingSystemInfo[];
 }
+
+type FlexProjectDetails = FlexProjectInfo;
 
 // FLEx project option for ComboBox
 type FlexProjectOption = {
@@ -296,6 +297,10 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
   // FLEx project state
   const [flexProjects, setFlexProjects] = useState<FlexProjectOption[]>([]);
+  // Full per-project info (writing systems etc.) keyed by project name. Populated
+  // alongside the project list so per-selection lookup is synchronous and we
+  // never need a second bridge round trip just to render WS options.
+  const [flexProjectsByName, setFlexProjectsByName] = useState<Map<string, FlexProjectInfo>>(() => new Map());
   const [selectedFlexProject, setSelectedFlexProject] = useState<FlexProjectOption | undefined>();
   const [flexProjectDetails, setFlexProjectDetails] = useState<FlexProjectDetails | undefined>();
   const [isLoadingFlexProjects, setIsLoadingFlexProjects] = useState(false);
@@ -369,7 +374,17 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   }
   const savedFlexProject = isPlatformError(savedFlexProjectName) ? "" : savedFlexProjectName;
 
-  // Load FLEx projects on mount
+  // Load FLEx projects on mount.
+  //
+  // Runs exactly once (empty deps). Persistence-restore lives in a separate
+  // effect below so its auto-heal write to `savedFlexProjectName` cannot
+  // re-fire this fetch — that re-entrancy was launching duplicate background
+  // bridge processes (issue #11).
+  //
+  // The bridge's --list-projects now returns full writing-system metadata for
+  // every project in a single call (parsed from on-disk .fwdata files, no LCM
+  // open), so we no longer need a separate per-project preload pass. Issues
+  // #11 and #13 trace back to that preload.
   useEffect(() => {
     let cancelled = false;
 
@@ -381,43 +396,30 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           "flexExport.listFlexProjects"
         ) as FlexProjectInfo[];
 
-        if (!cancelled) {
-          if (projects && projects.length > 0) {
-            const options: FlexProjectOption[] = projects.map((p) => ({
-              label: p.name,
-              name: p.name,
-            }));
-            setFlexProjects(options);
+        if (cancelled) return;
 
-            // Restore saved FLEx project selection if available
-            console.log('[Persistence] Attempting to restore FLEx project. Saved name:', savedFlexProjectName, 'Available options:', options.length);
-            if (savedFlexProjectName) {
-              const savedOption = options.find((p) => p.name === savedFlexProjectName);
-              if (savedOption) {
-                console.log('[Persistence] Restored FLEx project:', savedOption.label);
-                setSelectedFlexProject(savedOption);
-              } else {
-                console.log('[Persistence] Auto-heal: FLEx project not found, resetting:', savedFlexProjectName);
-                setSavedFlexProjectName("");
-              }
-            }
-
-            // Preload project details in background for faster switching
-            // Fire-and-forget - don't await, just start loading
-            const projectNames = projects.map(p => p.name);
-            papi.commands.sendCommand("flexExport.preloadFlexProjectInfo", projectNames)
-              .then(() => console.log('[Preload] Background preloading complete'))
-              .catch((err: unknown) => console.log('[Preload] Background preloading failed:', err));
-          } else {
-            // No projects found - FLEx may not be installed or no projects exist
-            setFlexProjects([]);
-            setFlexLoadError("no_projects");
+        if (projects && projects.length > 0) {
+          const options: FlexProjectOption[] = projects.map((p) => ({
+            label: p.name,
+            name: p.name,
+          }));
+          const lookup = new Map<string, FlexProjectInfo>();
+          for (const p of projects) {
+            lookup.set(p.name, p);
           }
+          setFlexProjects(options);
+          setFlexProjectsByName(lookup);
+        } else {
+          // No projects found - FLEx may not be installed or no projects exist
+          setFlexProjects([]);
+          setFlexProjectsByName(new Map());
+          setFlexLoadError("no_projects");
         }
       } catch (err) {
         console.error("Failed to fetch FLEx projects:", err);
         if (!cancelled) {
           setFlexProjects([]);
+          setFlexProjectsByName(new Map());
           setFlexLoadError(err instanceof Error ? err.message : String(err));
         }
       } finally {
@@ -432,7 +434,26 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     return () => {
       cancelled = true;
     };
-  }, [savedFlexProjectName]);
+  }, []);
+
+  // Restore the saved FLEx project once both the project list and the saved
+  // name are available. Kept separate from the fetch effect so the auto-heal
+  // write below does not re-trigger the list fetch.
+  useEffect(() => {
+    if (flexProjects.length === 0) return;
+    if (!savedFlexProjectName) return;
+
+    const savedOption = flexProjects.find((p) => p.name === savedFlexProjectName);
+    if (savedOption) {
+      console.log('[Persistence] Restored FLEx project:', savedOption.label);
+      setSelectedFlexProject(savedOption);
+    } else {
+      console.log('[Persistence] Auto-heal: FLEx project not found, resetting:', savedFlexProjectName);
+      setSavedFlexProjectName("");
+    }
+    // setSavedFlexProjectName is stable; intentionally omitted from deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flexProjects, savedFlexProjectName]);
 
   // Get the saved writing system code (handle potential error)
   if (isPlatformError(savedWritingSystemCode)) {
@@ -440,7 +461,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   }
   const savedWsCode = isPlatformError(savedWritingSystemCode) ? "" : savedWritingSystemCode;
 
-  // Load FLEx project details when a project is selected
+  // Load FLEx project details when a project is selected.
+  //
+  // Writing-system data already arrived with the list response, so we look it
+  // up synchronously from `flexProjectsByName`. The async getFlexProjectInfo
+  // call remains as a defensive fallback for the rare case where a project
+  // appears in the dropdown but is missing from the lookup map (e.g. saved
+  // selection restored before the list resolved).
   useEffect(() => {
     let cancelled = false;
 
@@ -452,10 +479,15 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       }
 
       try {
-        const details = await papi.commands.sendCommand(
-          "flexExport.getFlexProjectInfo",
-          selectedFlexProject.name
-        ) as FlexProjectDetails | undefined;
+        let details: FlexProjectDetails | undefined =
+          flexProjectsByName.get(selectedFlexProject.name);
+
+        if (!details) {
+          details = await papi.commands.sendCommand(
+            "flexExport.getFlexProjectInfo",
+            selectedFlexProject.name
+          ) as FlexProjectDetails | undefined;
+        }
 
         if (!cancelled && details) {
           setFlexProjectDetails(details);
@@ -528,7 +560,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     return () => {
       cancelled = true;
     };
-  }, [selectedFlexProject, savedWsCode]);
+  }, [selectedFlexProject, savedWsCode, flexProjectsByName]);
 
   // Auto-generate text name from book and chapter range (FLExTrans-compatible format)
   useEffect(() => {

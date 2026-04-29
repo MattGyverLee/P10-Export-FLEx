@@ -1,9 +1,13 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
+using System.Xml;
 using Microsoft.Win32;
 using SIL.LCModel;
 using SIL.LCModel.Core.Text;
@@ -108,93 +112,216 @@ namespace FlexTextBridge.Services
         }
 
         /// <summary>
-        /// Discover all FLEx projects on the system.
+        /// Discover all FLEx projects on the system, with full writing system metadata.
+        /// Reads metadata directly from on-disk project files (.fwdata XML) without
+        /// opening an LCM cache, so this never acquires lock files, never triggers
+        /// data migration, and never bumps project mtimes. See issues #11 and #13.
         /// </summary>
         public List<Models.ProjectInfo> DiscoverProjects()
         {
             Initialize();
 
-            var projects = new List<Models.ProjectInfo>();
             var projectsDir = GetProjectsDirectory();
-
             if (!Directory.Exists(projectsDir))
             {
-                return projects;
+                return new List<Models.ProjectInfo>();
             }
 
+            var candidates = new List<string>();
             foreach (var dir in Directory.GetDirectories(projectsDir))
             {
                 var projectName = Path.GetFileName(dir);
                 var fwdataFile = Path.Combine(dir, projectName + ".fwdata");
-
-                if (!File.Exists(fwdataFile))
-                    continue;
-
-                var projectInfo = new Models.ProjectInfo
-                {
-                    Name = projectName,
-                    Path = dir
-                };
-
-                // Try to get writing system info from project files
-                try
-                {
-                    var wsInfo = GetWritingSystemInfo(fwdataFile);
-                    projectInfo.VernacularWs = wsInfo.vernacular;
-                    projectInfo.AnalysisWs = wsInfo.analysis;
-                }
-                catch
-                {
-                    // If we can't read WS info, still include the project
-                    projectInfo.VernacularWs = "unknown";
-                    projectInfo.AnalysisWs = "unknown";
-                }
-
-                projects.Add(projectInfo);
+                if (File.Exists(fwdataFile))
+                    candidates.Add(dir);
             }
 
-            return projects.OrderBy(p => p.Name).ToList();
+            // Parse each project's .fwdata in parallel — each parse is independent
+            // and disk-bound, so a small thread pool keeps wall time down without
+            // thrashing the disk on spinning media.
+            var results = new ConcurrentBag<Models.ProjectInfo>();
+            var parallelism = Math.Min(8, Math.Max(1, Environment.ProcessorCount));
+            Parallel.ForEach(
+                candidates,
+                new ParallelOptions { MaxDegreeOfParallelism = parallelism },
+                dir =>
+                {
+                    var projectName = Path.GetFileName(dir);
+                    results.Add(ReadProjectMetadataFromFiles(dir, projectName));
+                });
+
+            return results.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
         }
 
         /// <summary>
-        /// Get writing system codes by reading project files directly (without opening LCM).
+        /// Read project metadata (active vernacular and analysis writing systems)
+        /// directly from the .fwdata XML, bypassing LCM. The first code listed in
+        /// CurVernWss / CurAnalysisWss is treated as the project default.
+        /// On any parse failure, returns a ProjectInfo with empty WS lists rather
+        /// than throwing — the chooser then shows the project name with no WS
+        /// options, which is a sane degraded state.
         /// </summary>
-        private (string vernacular, string analysis) GetWritingSystemInfo(string fwdataPath)
+        private static Models.ProjectInfo ReadProjectMetadataFromFiles(string projectDir, string projectName)
         {
-            var projectDir = Path.GetDirectoryName(fwdataPath);
-            var wsDir = Path.Combine(projectDir, "WritingSystemStore");
+            var info = new Models.ProjectInfo
+            {
+                Name = projectName,
+                Path = projectDir,
+                VernacularWritingSystems = new List<Models.WritingSystemInfo>(),
+                AnalysisWritingSystems = new List<Models.WritingSystemInfo>(),
+            };
 
-            string vernacular = "unknown";
-            string analysis = "unknown";
-
+            var fwdataPath = Path.Combine(projectDir, projectName + ".fwdata");
             try
             {
-                // Try to read from WritingSystemStore directory
-                if (Directory.Exists(wsDir))
-                {
-                    var wsFiles = Directory.GetFiles(wsDir, "*.ldml")
-                        .Select(f => Path.GetFileNameWithoutExtension(f))
-                        .OrderBy(f => f)
-                        .ToList();
-
-                    // Common pattern: analysis is English, vernacular is non-English
-                    var englishWs = wsFiles.FirstOrDefault(w => w.StartsWith("en"));
-                    var nonEnglishWs = wsFiles.FirstOrDefault(w => !w.StartsWith("en"));
-
-                    if (englishWs != null)
-                        analysis = englishWs;
-                    if (nonEnglishWs != null)
-                        vernacular = nonEnglishWs;
-                    else if (wsFiles.Count > 0)
-                        vernacular = wsFiles[0];
-                }
+                var (vernRaw, analysisRaw) = ReadCurrentWritingSystemsFromFwdata(fwdataPath);
+                info.VernacularWritingSystems = ParseWsList(vernRaw);
+                info.AnalysisWritingSystems = ParseWsList(analysisRaw);
+                info.VernacularWs = info.VernacularWritingSystems.FirstOrDefault()?.Code;
+                info.AnalysisWs = info.AnalysisWritingSystems.FirstOrDefault()?.Code;
             }
             catch
             {
-                // Ignore errors reading WS info
+                // Swallow per-project parse errors so one bad .fwdata doesn't hide
+                // every other project from the chooser.
             }
 
-            return (vernacular, analysis);
+            return info;
+        }
+
+        /// <summary>
+        /// Stream the .fwdata XML looking for the LangProject rt element and pull
+        /// the space-separated CurVernWss / CurAnalysisWss writing system codes
+        /// out of its &lt;Uni&gt; children. Uses XmlReader so we don't load the
+        /// whole multi-megabyte file into memory, and FileShare.ReadWrite so a
+        /// concurrently-running FLEx instance never blocks the read.
+        /// </summary>
+        private static (string vernacular, string analysis) ReadCurrentWritingSystemsFromFwdata(string fwdataPath)
+        {
+            string curVernRaw = null;
+            string curAnalysisRaw = null;
+
+            var settings = new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Ignore,
+                IgnoreComments = true,
+                IgnoreWhitespace = true,
+                IgnoreProcessingInstructions = true,
+                CloseInput = true,
+            };
+
+            using (var fileStream = new FileStream(
+                fwdataPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete))
+            using (var reader = XmlReader.Create(fileStream, settings))
+            {
+                while (reader.Read())
+                {
+                    if (reader.NodeType != XmlNodeType.Element || reader.Name != "rt")
+                        continue;
+
+                    if (reader.GetAttribute("class") != "LangProject")
+                        continue;
+
+                    // Walk children of the LangProject rt element.
+                    using (var subtree = reader.ReadSubtree())
+                    {
+                        subtree.Read(); // position on <rt class="LangProject" ...>
+                        while (subtree.Read())
+                        {
+                            if (subtree.NodeType != XmlNodeType.Element)
+                                continue;
+
+                            if (subtree.Name == "CurVernWss")
+                                curVernRaw = ReadInnerUniText(subtree);
+                            else if (subtree.Name == "CurAnalysisWss")
+                                curAnalysisRaw = ReadInnerUniText(subtree);
+
+                            if (curVernRaw != null && curAnalysisRaw != null)
+                                break;
+                        }
+                    }
+                    break; // LangProject processed; nothing more we need from the file
+                }
+            }
+
+            return (curVernRaw, curAnalysisRaw);
+        }
+
+        /// <summary>
+        /// Reader is positioned on a CurVernWss / CurAnalysisWss start element.
+        /// Read forward to its &lt;Uni&gt; child and return the text content.
+        /// </summary>
+        private static string ReadInnerUniText(XmlReader reader)
+        {
+            using (var sub = reader.ReadSubtree())
+            {
+                while (sub.Read())
+                {
+                    if (sub.NodeType == XmlNodeType.Element && sub.Name == "Uni")
+                        return sub.ReadElementContentAsString();
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Split a space-separated WS code list into WritingSystemInfo entries.
+        /// The first entry is marked IsDefault — that matches LCM's
+        /// CurrentVernacularWritingSystems / CurrentAnalysisWritingSystems ordering.
+        /// </summary>
+        private static List<Models.WritingSystemInfo> ParseWsList(string raw)
+        {
+            var result = new List<Models.WritingSystemInfo>();
+            if (string.IsNullOrWhiteSpace(raw))
+                return result;
+
+            var codes = raw.Trim().Split(
+                new[] { ' ', '\t', '\r', '\n' },
+                StringSplitOptions.RemoveEmptyEntries);
+
+            for (int i = 0; i < codes.Length; i++)
+            {
+                result.Add(new Models.WritingSystemInfo
+                {
+                    Code = codes[i],
+                    Name = LookupWsDisplayName(codes[i]),
+                    IsDefault = (i == 0),
+                });
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Best-effort friendly name for a writing system tag. .NET recognises
+        /// well-formed BCP-47 tags and gives us a localised display name for
+        /// known ones (e.g. "en" -> "English"). Unknown tags (private-use,
+        /// custom variants like "arz-Qaaa-fonipa-x-Aima") fall back to the code.
+        /// We can't replicate LCM's WritingSystem.DisplayLabel exactly without
+        /// opening the project, but the code is recognisable enough for a picker.
+        /// </summary>
+        private static string LookupWsDisplayName(string code)
+        {
+            try
+            {
+                var culture = CultureInfo.GetCultureInfo(code);
+                if (culture == null)
+                    return code;
+                var display = culture.DisplayName;
+                if (string.IsNullOrEmpty(display))
+                    return code;
+                if (display.IndexOf("Unknown", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return code;
+                if (display.Contains(code))
+                    return display;
+                return $"{display} ({code})";
+            }
+            catch
+            {
+                return code;
+            }
         }
 
         /// <summary>
@@ -260,8 +387,10 @@ namespace FlexTextBridge.Services
         }
 
         /// <summary>
-        /// Get detailed project information including all writing systems.
-        /// Opens the project temporarily to read the writing system info.
+        /// Get detailed project information including all active writing systems.
+        /// Reads metadata directly from the .fwdata XML — no LCM cache is opened,
+        /// so this never acquires lock files, never triggers data migration,
+        /// and never bumps the project's mtime. See issues #11 and #13.
         /// </summary>
         public Models.ProjectInfo GetProjectInfo(string projectName)
         {
@@ -274,82 +403,7 @@ namespace FlexTextBridge.Services
                 throw new FileNotFoundException($"Project '{projectName}' not found at {fwdataPath}");
             }
 
-            var projectInfo = new Models.ProjectInfo
-            {
-                Name = projectName,
-                Path = projectDir,
-                VernacularWritingSystems = new List<Models.WritingSystemInfo>(),
-                AnalysisWritingSystems = new List<Models.WritingSystemInfo>()
-            };
-
-            // Open the project to get writing system info
-            var cache = OpenProject(projectName);
-            try
-            {
-                // Get default writing systems
-                var defaultVernWs = cache.DefaultVernWs;
-                var defaultAnalWs = cache.DefaultAnalWs;
-
-                // Get all vernacular writing systems
-                foreach (var ws in cache.ServiceLocator.WritingSystems.CurrentVernacularWritingSystems)
-                {
-                    var wsHandle = cache.ServiceLocator.WritingSystemManager.Get(ws.Id);
-                    var isDefault = wsHandle?.Handle == defaultVernWs;
-
-                    projectInfo.VernacularWritingSystems.Add(new Models.WritingSystemInfo
-                    {
-                        Code = ws.Id,
-                        Name = ws.DisplayLabel ?? ws.Id,
-                        IsDefault = isDefault
-                    });
-
-                    // Set the default vernacular WS code
-                    if (isDefault)
-                    {
-                        projectInfo.VernacularWs = ws.Id;
-                    }
-                }
-
-                // Get all analysis writing systems
-                foreach (var ws in cache.ServiceLocator.WritingSystems.CurrentAnalysisWritingSystems)
-                {
-                    var wsHandle = cache.ServiceLocator.WritingSystemManager.Get(ws.Id);
-                    var isDefault = wsHandle?.Handle == defaultAnalWs;
-
-                    projectInfo.AnalysisWritingSystems.Add(new Models.WritingSystemInfo
-                    {
-                        Code = ws.Id,
-                        Name = ws.DisplayLabel ?? ws.Id,
-                        IsDefault = isDefault
-                    });
-
-                    // Set the default analysis WS code
-                    if (isDefault)
-                    {
-                        projectInfo.AnalysisWs = ws.Id;
-                    }
-                }
-
-                // Fallback if no default was found
-                if (string.IsNullOrEmpty(projectInfo.VernacularWs) && projectInfo.VernacularWritingSystems.Count > 0)
-                {
-                    projectInfo.VernacularWs = projectInfo.VernacularWritingSystems[0].Code;
-                    projectInfo.VernacularWritingSystems[0].IsDefault = true;
-                }
-                if (string.IsNullOrEmpty(projectInfo.AnalysisWs) && projectInfo.AnalysisWritingSystems.Count > 0)
-                {
-                    projectInfo.AnalysisWs = projectInfo.AnalysisWritingSystems[0].Code;
-                    projectInfo.AnalysisWritingSystems[0].IsDefault = true;
-                }
-            }
-            finally
-            {
-                // Close the project (don't dispose - caller may want to use it)
-                _cache?.Dispose();
-                _cache = null;
-            }
-
-            return projectInfo;
+            return ReadProjectMetadataFromFiles(projectDir, projectName);
         }
 
         public void Dispose()

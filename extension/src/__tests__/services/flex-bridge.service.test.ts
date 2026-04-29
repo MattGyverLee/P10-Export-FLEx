@@ -31,12 +31,11 @@ interface FlexProjectInfo {
   path: string;
   vernacularWs: string;
   analysisWs: string;
-}
-
-interface FlexProjectDetails extends FlexProjectInfo {
   vernacularWritingSystems: WritingSystemInfo[];
   analysisWritingSystems: WritingSystemInfo[];
 }
+
+type FlexProjectDetails = FlexProjectInfo;
 
 interface ListProjectsResult {
   success: boolean;
@@ -400,6 +399,12 @@ describe('FlexBridgeService', () => {
             path: 'C:\\Projects\\TestProject',
             vernacularWs: 'en',
             analysisWs: 'en',
+            vernacularWritingSystems: [
+              { code: 'en', name: 'English', isDefault: true },
+            ],
+            analysisWritingSystems: [
+              { code: 'en', name: 'English', isDefault: true },
+            ],
           },
         ],
       };

@@ -12,22 +12,26 @@ export interface WritingSystemInfo {
 }
 
 /**
- * FLEx project information returned by the bridge CLI (basic, from list-projects)
+ * FLEx project information returned by the bridge CLI.
+ * Both --list-projects and --project-info now populate the full writing-system
+ * arrays — the bridge reads these directly from .fwdata XML, so there's no cost
+ * to including them in the list response. See issues #11 and #13.
  */
 export interface FlexProjectInfo {
   name: string;
   path: string;
   vernacularWs: string;
   analysisWs: string;
-}
-
-/**
- * Detailed FLEx project information (from project-info command)
- */
-export interface FlexProjectDetails extends FlexProjectInfo {
   vernacularWritingSystems: WritingSystemInfo[];
   analysisWritingSystems: WritingSystemInfo[];
 }
+
+/**
+ * Alias retained for backwards compatibility with call sites that previously
+ * used the "detailed" type to indicate WS arrays were present. The list and
+ * info responses now share the same shape.
+ */
+export type FlexProjectDetails = FlexProjectInfo;
 
 /**
  * Result from listing FLEx projects
