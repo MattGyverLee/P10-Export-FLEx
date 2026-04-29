@@ -1554,7 +1554,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
               {/* Error message when FLEx is not available */}
               {flexLoadError && (
                 <div id="flex-error-message" className="tw-p-2 tw-bg-red-50 tw-border tw-border-red-200 tw-rounded-md dark:tw-bg-red-900/20 dark:tw-border-red-700">
-                  <p className="tw-text-xs tw-text-red-800 dark:tw-text-red-200">
+                  <p className="tw-text-xs tw-text-red-800 dark:tw-text-red-200 tw-whitespace-normal tw-break-words">
                     {flexLoadError === "no_projects"
                       ? localizedStrings["%flexExport_flexNotFound%"]
                       : (localizedStrings["%flexExport_flexLoadError%"] || "").replace("{error}", flexLoadError)}
