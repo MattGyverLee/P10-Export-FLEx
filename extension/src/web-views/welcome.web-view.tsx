@@ -252,6 +252,14 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // End chapter for range selection (defaults to start chapter)
   const [endChapter, setEndChapter] = useState(initialScrRef?.chapterNum || 1);
 
+  // When the panel is reused (existingId: "?") with a new project/scripture reference, sync state
+  useEffect(() => {
+    if (!initialScrRef) return;
+    setScrRef({ ...initialScrRef, verseNum: 1 });
+    setEndChapter(initialScrRef.chapterNum || 1);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state?.initialScrRef]);
+
   // Per-project settings using flat WebView state keys (avoids nested object serialization issues)
   // Each setting uses a compound key: "settingName-projectId"
   const [savedFlexProjectName, setSavedFlexProjectName] = useWebViewState<string>(
