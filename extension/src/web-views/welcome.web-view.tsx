@@ -1497,7 +1497,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
               </Label>
             </div>
             <div id="include-export-content" className="tw-px-4 tw-py-3 tw-flex tw-flex-col tw-gap-1">
-              <label id="include-footnotes-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+              <label id="include-footnotes-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer tw-font-sans">
                 <Checkbox
                   id="include-footnotes-checkbox"
                   checked={includeFootnotes}
@@ -1505,7 +1505,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                 />
                 <span id="include-footnotes-label" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_footnotes%"]}</span>
               </label>
-              <label id="include-crossrefs-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+              <label id="include-crossrefs-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer tw-font-sans">
                 <Checkbox
                   id="include-crossrefs-checkbox"
                   checked={includeCrossRefs}
@@ -1513,7 +1513,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                 />
                 <span id="include-crossrefs-label" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_crossReferences%"]}</span>
               </label>
-              <label id="include-intro-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+              <label id="include-intro-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer tw-font-sans">
                 <Checkbox
                   id="include-intro-checkbox"
                   checked={includeIntro}
@@ -1524,7 +1524,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                   {localizedStrings["%flexExport_introduction%"]}
                 </span>
               </label>
-              <label id="include-remarks-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+              <label id="include-remarks-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer tw-font-sans">
                 <Checkbox
                   id="include-remarks-checkbox"
                   checked={includeRemarks}
@@ -1532,7 +1532,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                 />
                 <span id="include-remarks-label" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_remarks%"]}</span>
               </label>
-              <label id="include-figures-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+              <label id="include-figures-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer tw-font-sans">
                 <Checkbox
                   id="include-figures-checkbox"
                   checked={includeFigures}
