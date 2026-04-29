@@ -84,6 +84,18 @@ namespace FlexTextBridge.Services
             "mte", "mte1", "mte2", "mt", "mt1", "mt2", "mt3"
         };
 
+        // Book header markers — \h (running header) and \toc* (table of contents
+        // navigation entries). The marker itself is analysis (non-translatable),
+        // but the content is the translated book name and is therefore vernacular.
+        // Treated like a section: starts a new paragraph so the header sits on
+        // its own line. See issue #15.
+        private static readonly HashSet<string> BookHeaderMarkers = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "h", "h1", "h2", "h3",
+            "toc1", "toc2", "toc3",
+            "toca", "toca1", "toca2", "toca3"
+        };
+
         // Reference markers (marker is analysis WS, content is also analysis - references)
         private static readonly HashSet<string> ReferenceMarkers = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -175,7 +187,14 @@ namespace FlexTextBridge.Services
             switch (nodeType)
             {
                 case "book":
-                    // Book identification - add marker and code as analysis
+                    // Book identification (\id BOOK_CODE). USFM requires this and it
+                    // is non-translatable, so we put it on its own line/paragraph and
+                    // tag every segment as analysis. Issue #13/#15.
+                    if (activeParagraph.Segments.Count > 0)
+                    {
+                        paragraphs.Add(activeParagraph);
+                        activeParagraph = new Paragraph();
+                    }
                     if (!string.IsNullOrEmpty(marker))
                     {
                         activeParagraph.AddSegment($"\\{marker} ", false);
@@ -184,8 +203,14 @@ namespace FlexTextBridge.Services
                     {
                         activeParagraph.AddSegment($"{node.Code} ", false);
                     }
-                    // Process any content (book title text would be vernacular)
+                    // Any inline book-node content (rare) is also analysis here.
                     ProcessContent(node.Content, activeParagraph, paragraphs, ref activeParagraph, true);
+                    // Close the \id line so subsequent content starts on a new paragraph.
+                    if (activeParagraph.Segments.Count > 0)
+                    {
+                        paragraphs.Add(activeParagraph);
+                        activeParagraph = new Paragraph();
+                    }
                     break;
 
                 case "chapter":
@@ -211,8 +236,9 @@ namespace FlexTextBridge.Services
                     bool isSectionMarker = SectionMarkers.Contains(marker ?? "");
                     bool isIntroMarker = IntroMarkers.Contains(marker ?? "");
                     bool isReferenceMarker = ReferenceMarkers.Contains(marker ?? "");
+                    bool isBookHeaderMarker = BookHeaderMarkers.Contains(marker ?? "");
 
-                    if (isParaMarker || isSectionMarker || isIntroMarker || isReferenceMarker)
+                    if (isParaMarker || isSectionMarker || isIntroMarker || isReferenceMarker || isBookHeaderMarker)
                     {
                         // Start new paragraph
                         if (activeParagraph.Segments.Count > 0)
@@ -225,7 +251,7 @@ namespace FlexTextBridge.Services
 
                     // Process paragraph content
                     // Reference markers (\sr, \r, \mr) have analysis content (book/chapter/verse references)
-                    // Section heading content and regular paragraph content is vernacular
+                    // Section heading, book-header (\h, \toc*), and regular paragraph content is vernacular
                     ProcessContent(node.Content, activeParagraph, paragraphs, ref activeParagraph, isReferenceMarker);
                     break;
 

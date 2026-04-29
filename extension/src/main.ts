@@ -48,6 +48,7 @@ const LOCALIZATION_KEYS = [
   "%flexExport_introduction%",
   "%flexExport_remarks%",
   "%flexExport_figures%",
+  "%flexExport_bookHeaders%",
   "%flexExport_formatted%",
   "%flexExport_usfm%",
   "%flexExport_usjData%",

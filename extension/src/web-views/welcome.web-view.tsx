@@ -130,9 +130,13 @@ interface ProjectExportSettings {
   includeIntro: boolean;
   includeRemarks: boolean;
   includeFigures: boolean;
+  includeBookHeaders: boolean;
 }
 
-// Default settings for new projects
+// Default settings for new projects.
+// includeBookHeaders default ON: \h is strongly recommended in USFM and \toc*
+// is useful when adapting, even though the latter is being phased out in favour
+// of project settings. The \id line is always emitted regardless of toggles.
 const DEFAULT_PROJECT_SETTINGS: ProjectExportSettings = {
   flexProjectName: "",
   writingSystemCode: "",
@@ -141,6 +145,7 @@ const DEFAULT_PROJECT_SETTINGS: ProjectExportSettings = {
   includeIntro: false,
   includeRemarks: false,
   includeFigures: true,
+  includeBookHeaders: true,
 };
 
 // Default scripture reference
@@ -176,6 +181,7 @@ const ENGLISH_FALLBACKS: Record<string, string> = {
   "%flexExport_introduction%": "Introduction",
   "%flexExport_remarks%": "Remarks",
   "%flexExport_figures%": "Figures",
+  "%flexExport_bookHeaders%": "Book Headers (\\h, \\toc)",
   "%flexExport_formatted%": "Formatted",
   "%flexExport_usfm%": "USFM",
   "%flexExport_usjData%": "USJ Data",
@@ -289,6 +295,10 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   );
   const [includeFigures, setIncludeFigures] = useWebViewState<boolean>(
     `includeFigures-${projectId || "default"}`,
+    true
+  );
+  const [includeBookHeaders, setIncludeBookHeaders] = useWebViewState<boolean>(
+    `includeBookHeaders-${projectId || "default"}`,
     true
   );
 
@@ -883,7 +893,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     return /^(imt\d?|is\d?|ip|ipi|im|imi|ipq|imq|ipr|iq\d?|ib|ili\d?|iot|io\d?|iex|ie|mt\d?)$/.test(marker);
   };
 
-  // Book header markers always excluded — identification/navigation metadata, not scripture content
+  // Book header markers (\h running header, \toc1-3 / \toca1-3 table-of-contents
+  // entries). These have translatable content; the marker itself is metadata.
+  // Filtering is gated on the includeBookHeaders toggle. Issue #15.
   const isBookHeaderMarker = (marker: string): boolean => {
     return /^(h\d?|toc\d|toca\d?)$/.test(marker);
   };
@@ -915,8 +927,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           const node = item as UsjNode;
 
           if (node.type === "book") {
-            // Book identification (\id) and its children are excluded from export
-            return "";
+            // \id BOOK_CODE — always rendered, never filtered. Issue #15.
+            const code = node.code ?? "";
+            return `\\id ${code}\n`;
           }
           if (node.type === "chapter" && node.number) {
             return `\\c ${node.number}\n`;
@@ -925,8 +938,8 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             return `\\v ${node.number} `;
           }
           if (node.type === "para" && node.marker) {
-            // Always exclude book-header markers (\h, \toc1, \toc2, \toc3)
-            if (isFirstChapter && isBookHeaderMarker(node.marker)) {
+            // Drop book-header markers (\h, \toc*) only when the toggle is off.
+            if (!includeBookHeaders && isFirstChapter && isBookHeaderMarker(node.marker)) {
               return "";
             }
             // Skip intro/title markers if not including intro (only for chapter 1)
@@ -982,7 +995,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         return "";
       })
       .join("\n");
-  }, [chaptersUSJ, isLoading, includeFootnotes, includeCrossRefs, includeIntro, includeRemarks, includeFigures, scrRef.chapterNum, localizedStrings]);
+  }, [chaptersUSJ, isLoading, includeFootnotes, includeCrossRefs, includeIntro, includeRemarks, includeFigures, includeBookHeaders, scrRef.chapterNum, localizedStrings]);
 
   // Convert USJ to formatted HTML-like preview
   const formattedPreview = useMemo(() => {
@@ -996,6 +1009,18 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
         const node = item as UsjNode;
 
+        if (node.type === "book") {
+          // Render \id BOOK_CODE as a small monospace label so the user can see
+          // it in the preview. Always shown — not gated on any toggle. Issue #15.
+          return (
+            <div
+              key={itemKey}
+              className="tw-text-xs tw-font-mono tw-text-muted-foreground tw-mb-2"
+            >
+              \id {node.code ?? ""}
+            </div>
+          );
+        }
         if (node.type === "chapter" && node.number) {
           return (
             <div key={itemKey} className="tw-text-lg tw-font-bold tw-mb-3 tw-text-foreground">
@@ -1011,6 +1036,10 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           );
         }
         if (node.type === "para" && node.marker) {
+          // Drop book-header markers (\h, \toc*) when the toggle is off.
+          if (!includeBookHeaders && isFirstChapter && isBookHeaderMarker(node.marker)) {
+            return null;
+          }
           // Skip intro paragraphs if not including intro (only for chapter 1)
           if (!includeIntro && isFirstChapter && isIntroMarker(node.marker)) {
             return null;
@@ -1129,7 +1158,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         })}
       </div>
     );
-  }, [chaptersUSJ, isLoading, includeFootnotes, includeCrossRefs, includeIntro, includeRemarks, includeFigures, scrRef.chapterNum, localizedStrings]);
+  }, [chaptersUSJ, isLoading, includeFootnotes, includeCrossRefs, includeIntro, includeRemarks, includeFigures, includeBookHeaders, scrRef.chapterNum, localizedStrings]);
 
   // Filter USJ content based on toggles
   const filterUsjContent = useCallback(
@@ -1139,14 +1168,15 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           if (typeof item === "string") return item;
           const node = item as UsjNode;
 
-          // Skip book identification node (\id and its children like \h, \toc*)
-          if (node.type === "book") {
-            return null;
-          }
+          // The book identification node (\id) is always preserved — USFM
+          // requires it and the bridge tags it as analysis (English) so it
+          // never gets translated. Issue #15.
 
           if (node.type === "para" && node.marker) {
-            // Always exclude book-header markers (\h, \toc1, \toc2, \toc3) — not scripture content
-            if (isFirstChapter && isBookHeaderMarker(node.marker)) {
+            // Drop \h and \toc* only when the user has unchecked Book Headers.
+            // When kept, the marker is analysis and the content is vernacular
+            // (translatable book name).
+            if (!includeBookHeaders && isFirstChapter && isBookHeaderMarker(node.marker)) {
               return null;
             }
             // Skip intro/title markers if not including intro (only for chapter 1)
@@ -1188,7 +1218,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         })
         .filter((item): item is UsjNode | string => item !== null);
     },
-    [includeFootnotes, includeCrossRefs, includeIntro, includeRemarks, includeFigures]
+    [includeFootnotes, includeCrossRefs, includeIntro, includeRemarks, includeFigures, includeBookHeaders]
   );
 
   // Generate a unique name by appending (2), (3), etc.
@@ -1234,6 +1264,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         setIncludeIntro(includeIntro);
         setIncludeRemarks(includeRemarks);
         setIncludeFigures(includeFigures);
+        setIncludeBookHeaders(includeBookHeaders);
       }
     } catch (saveErr) {
       console.warn('[Persistence] Failed to save settings at export start:', saveErr);
@@ -1262,9 +1293,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       // Note: FLEx navigation is handled early (when project details load), not at export time.
       // By the time the user clicks Export, FLEx has already been moved to the Lexicon.
 
-      // Filter USJ content based on toggles before export
+      // Filter USJ content based on toggles before export.
+      // The export's first chapter (idx 0) is treated as the "first chapter" for
+      // chapter-1-only filters (book headers, intro). The user may be exporting
+      // a range starting at chapter 5 — in that case the USJ for chapter 5 has
+      // no book/header content of its own, so those filters are no-ops.
       const filteredChapters = chaptersUSJ.map((chapter, idx) => {
-        const isFirstChapter = idx === 0 && scrRef.chapterNum === 1;
+        const isFirstChapter = idx === 0;
         if (chapter.content) {
           return {
             ...chapter,
@@ -1273,6 +1308,29 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         }
         return chapter;
       });
+
+      // Ensure every export starts with a \id BOOK line. USFM requires it and
+      // FLEx will reject input without it. Issue #15. If the first chapter's
+      // USJ already has a book node (typical for chapter 1), leave it alone;
+      // otherwise inject a synthetic one based on the scripture reference.
+      if (filteredChapters.length > 0) {
+        const firstContent = filteredChapters[0].content as (UsjNode | string)[] | undefined;
+        const hasBookNode = !!firstContent?.some(
+          (item) => typeof item !== "string" && (item as UsjNode).type === "book"
+        );
+        if (!hasBookNode) {
+          const bookCode = scrRef.book;
+          const synthesisedBook: UsjNode = {
+            type: "book",
+            marker: "id",
+            code: bookCode,
+          };
+          filteredChapters[0] = {
+            ...filteredChapters[0],
+            content: [synthesisedBook, ...(firstContent ?? [])],
+          };
+        }
+      }
 
       const result = await papi.commands.sendCommand(
         "flexExport.exportToFlex",
@@ -1385,7 +1443,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       // Clear progress steps after a delay so user can see final state
       setTimeout(() => setExportSteps([]), 5000);
     }
-  }, [selectedFlexProject, textName, chaptersUSJ, overwriteEnabled, showOverwriteConfirm, selectedWritingSystem, scrRef.chapterNum, filterUsjContent, localizedStrings, generateUniqueName, updateStep]);
+  }, [selectedFlexProject, textName, chaptersUSJ, overwriteEnabled, showOverwriteConfirm, selectedWritingSystem, scrRef.chapterNum, scrRef.book, filterUsjContent, localizedStrings, generateUniqueName, updateStep]);
 
   // Cancel overwrite confirmation
   const handleCancelOverwrite = useCallback(() => {
@@ -1415,8 +1473,10 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   const usjJson = useMemo(() => {
     if (!chaptersUSJ.length) return "";
 
+    // Mirror the export pipeline so the preview shows what the bridge will see,
+    // including the synthesised \id line for late-start exports. Issue #15.
     const filteredChapters = chaptersUSJ.map((chapter, idx) => {
-      const isFirstChapter = idx === 0 && scrRef.chapterNum === 1;
+      const isFirstChapter = idx === 0;
       if (chapter.content) {
         return {
           ...chapter,
@@ -1426,8 +1486,26 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       return chapter;
     });
 
+    if (filteredChapters.length > 0) {
+      const firstContent = filteredChapters[0].content as (UsjNode | string)[] | undefined;
+      const hasBookNode = !!firstContent?.some(
+        (item) => typeof item !== "string" && (item as UsjNode).type === "book"
+      );
+      if (!hasBookNode) {
+        const synthesisedBook: UsjNode = {
+          type: "book",
+          marker: "id",
+          code: scrRef.book,
+        };
+        filteredChapters[0] = {
+          ...filteredChapters[0],
+          content: [synthesisedBook, ...(firstContent ?? [])],
+        };
+      }
+    }
+
     return JSON.stringify(filteredChapters, null, 2);
-  }, [chaptersUSJ, filterUsjContent, scrRef.chapterNum]);
+  }, [chaptersUSJ, filterUsjContent, scrRef.book]);
 
   // Render USJ JSON with RTL-aware string values
   const renderUsjWithDirection = useMemo(() => {
@@ -1590,6 +1668,20 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                   onCheckedChange={(checked: boolean | "indeterminate") => setIncludeFigures(checked === true)}
                 />
                 <span id="include-figures-label" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_figures%"]}</span>
+              </label>
+              <label id="include-book-headers-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer tw-font-sans">
+                <Checkbox
+                  id="include-book-headers-checkbox"
+                  checked={includeBookHeaders}
+                  onCheckedChange={(checked: boolean | "indeterminate") => setIncludeBookHeaders(checked === true)}
+                  disabled={scrRef.chapterNum !== 1}
+                />
+                <span
+                  id="include-book-headers-label"
+                  className={`tw-text-sm ${scrRef.chapterNum !== 1 ? "tw-text-muted-foreground" : "tw-text-foreground"}`}
+                >
+                  {localizedStrings["%flexExport_bookHeaders%"]}
+                </span>
               </label>
             </div>
           </div>
