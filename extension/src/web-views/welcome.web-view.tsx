@@ -325,10 +325,10 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   }, [scrRef.book]);
 
   // When start chapter changes, reset end chapter to match (and clamp to valid range)
+  // Verse is always normalized to 1 — selection is chapter-level only
   const handleStartRefChange = useCallback(
     (newScrRef: { book: string; chapterNum: number; verseNum: number }) => {
-      setScrRef(newScrRef);
-      // Reset end chapter to start chapter when start changes
+      setScrRef({ ...newScrRef, verseNum: 1 });
       setEndChapter(newScrRef.chapterNum);
     },
     []
