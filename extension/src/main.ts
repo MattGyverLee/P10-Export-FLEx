@@ -80,6 +80,7 @@ const LOCALIZATION_KEYS = [
   "%flexExport_export%",
   "%flexExport_exporting%",
   "%flexExport_exportSuccess%",
+  "%flexExport_exportSuccessSingular%",
   "%flexExport_exportFailed%",
   "%flexExport_windowsOnly%",
   "%flexExport_noFlexProjectSelected%",

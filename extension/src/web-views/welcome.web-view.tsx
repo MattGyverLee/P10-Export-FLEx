@@ -133,10 +133,8 @@ interface ProjectExportSettings {
   includeBookHeaders: boolean;
 }
 
-// Default settings for new projects.
-// includeBookHeaders default ON: \h is strongly recommended in USFM and \toc*
-// is useful when adapting, even though the latter is being phased out in favour
-// of project settings. The \id line is always emitted regardless of toggles.
+// Default settings for new projects. The \id line is always emitted regardless
+// of toggles.
 const DEFAULT_PROJECT_SETTINGS: ProjectExportSettings = {
   flexProjectName: "",
   writingSystemCode: "",
@@ -145,7 +143,7 @@ const DEFAULT_PROJECT_SETTINGS: ProjectExportSettings = {
   includeIntro: false,
   includeRemarks: false,
   includeFigures: true,
-  includeBookHeaders: true,
+  includeBookHeaders: false,
 };
 
 // Default scripture reference
@@ -213,6 +211,7 @@ const ENGLISH_FALLBACKS: Record<string, string> = {
   "%flexExport_export%": "Export",
   "%flexExport_exporting%": "Exporting...",
   "%flexExport_exportSuccess%": "Successfully exported {paragraphCount} paragraphs to \"{textName}\"",
+  "%flexExport_exportSuccessSingular%": "Successfully exported {paragraphCount} paragraph to \"{textName}\"",
   "%flexExport_exportFailed%": "Export failed: {error}",
   "%flexExport_windowsOnly%": "This feature is only available on Windows",
   "%flexExport_noFlexProjectSelected%": "No FLEx project selected",
@@ -299,7 +298,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   );
   const [includeBookHeaders, setIncludeBookHeaders] = useWebViewState<boolean>(
     `includeBookHeaders-${projectId || "default"}`,
-    true
+    false
   );
 
   // Overwrite setting - independent of project selection (stored in global WebView state)
@@ -861,6 +860,29 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           }
         }
 
+        // Ensure the loaded range starts with a \id book node. Paratext only
+        // stores it in chapter 1's USJ, so a translator working out of order
+        // (e.g. passion story before chapter 1) would otherwise see a preview
+        // and an export with no \id at all. Synthesise one from scrRef.book
+        // so preview and export agree.
+        if (chapters.length > 0) {
+          const firstContent = chapters[0].content as (UsjNode | string)[] | undefined;
+          const hasBookNode = !!firstContent?.some(
+            (item) => typeof item !== "string" && (item as UsjNode).type === "book"
+          );
+          if (!hasBookNode) {
+            const synthesisedBook: UsjNode = {
+              type: "book",
+              marker: "id",
+              code: scrRef.book,
+            };
+            chapters[0] = {
+              ...chapters[0],
+              content: [synthesisedBook, ...(firstContent ?? [])],
+            };
+          }
+        }
+
         if (!cancelled) {
           setChaptersUSJ(chapters);
         }
@@ -1051,6 +1073,18 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           // Skip remarks if not including them
           if (!includeRemarks && isRemarkMarker(node.marker)) {
             return null;
+          }
+          // Render book headers (\h, \toc*) with their SFM tag visible, like \id.
+          if (isBookHeaderMarker(node.marker)) {
+            return (
+              <div
+                key={itemKey}
+                className="tw-text-xs tw-font-mono tw-text-muted-foreground tw-mb-2"
+              >
+                {`\\${node.marker} `}
+                {node.content && renderContent(node.content, itemKey, isFirstChapter)}
+              </div>
+            );
           }
 
           const isHeader = node.marker.startsWith("s") || node.marker === "ms";
@@ -1297,7 +1331,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       // The export's first chapter (idx 0) is treated as the "first chapter" for
       // chapter-1-only filters (book headers, intro). The user may be exporting
       // a range starting at chapter 5 — in that case the USJ for chapter 5 has
-      // no book/header content of its own, so those filters are no-ops.
+      // no book/header content of its own, so those filters are no-ops. The
+      // synthetic \id book node is injected at fetch time, so chaptersUSJ[0]
+      // already has it whether or not chapter 1 is in the range.
       const filteredChapters = chaptersUSJ.map((chapter, idx) => {
         const isFirstChapter = idx === 0;
         if (chapter.content) {
@@ -1308,29 +1344,6 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         }
         return chapter;
       });
-
-      // Ensure every export starts with a \id BOOK line. USFM requires it and
-      // FLEx will reject input without it. Issue #15. If the first chapter's
-      // USJ already has a book node (typical for chapter 1), leave it alone;
-      // otherwise inject a synthetic one based on the scripture reference.
-      if (filteredChapters.length > 0) {
-        const firstContent = filteredChapters[0].content as (UsjNode | string)[] | undefined;
-        const hasBookNode = !!firstContent?.some(
-          (item) => typeof item !== "string" && (item as UsjNode).type === "book"
-        );
-        if (!hasBookNode) {
-          const bookCode = scrRef.book;
-          const synthesisedBook: UsjNode = {
-            type: "book",
-            marker: "id",
-            code: bookCode,
-          };
-          filteredChapters[0] = {
-            ...filteredChapters[0],
-            content: [synthesisedBook, ...(firstContent ?? [])],
-          };
-        }
-      }
 
       const result = await papi.commands.sendCommand(
         "flexExport.exportToFlex",
@@ -1347,8 +1360,15 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         updateStep('export', 'done');
         updateStep('verify', 'active');
 
-        const successMessage = (localizedStrings["%flexExport_exportSuccess%"] || "Successfully exported {paragraphCount} paragraphs to \"{textName}\"")
-          .replace("{paragraphCount}", String(result.paragraphCount || 0))
+        const exportedCount = result.paragraphCount || 0;
+        const isSingular = exportedCount === 1;
+        const messageTemplate = isSingular
+          ? localizedStrings["%flexExport_exportSuccessSingular%"]
+            || "Successfully exported {paragraphCount} paragraph to \"{textName}\""
+          : localizedStrings["%flexExport_exportSuccess%"]
+            || "Successfully exported {paragraphCount} paragraphs to \"{textName}\"";
+        const successMessage = messageTemplate
+          .replace("{paragraphCount}", String(exportedCount))
           .replace("{textName}", result.textName || nameToUse);
         setExportStatus({ success: true, message: successMessage });
         setExportCount(prev => prev + 1);
@@ -1938,6 +1958,8 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                     ?.replace("{endChapter}", String(endChapter))}
             </span>
           )}
+        </div>
+
         {/* FLExTrans attribution */}
         <div id="flextrans-attribution" className="tw-mt-6 tw-text-center tw-text-xs tw-text-muted-foreground">
           Brought to you by the FLExTrans team, SIL Global
