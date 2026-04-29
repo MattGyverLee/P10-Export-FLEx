@@ -847,7 +847,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // Helper to check if a marker is an introduction marker
   const isIntroMarker = (marker: string): boolean => {
     // Intro markers: imt, is, ip, ipi, im, imi, ipq, imq, ipr, iq, ib, ili, iot, io, iex, ie
-    return /^(imt\d?|is\d?|ip|ipi|im|imi|ipq|imq|ipr|iq\d?|ib|ili\d?|iot|io\d?|iex|ie)$/.test(marker);
+    // Also includes main title markers (mt, mt1...) per FLExTrans convention
+    return /^(imt\d?|is\d?|ip|ipi|im|imi|ipq|imq|ipr|iq\d?|ib|ili\d?|iot|io\d?|iex|ie|mt\d?)$/.test(marker);
+  };
+
+  // Book header markers always excluded — identification/navigation metadata, not scripture content
+  const isBookHeaderMarker = (marker: string): boolean => {
+    return /^(h\d?|toc\d|toca\d?)$/.test(marker);
   };
 
   // Helper to check if a marker is a remark marker
@@ -876,9 +882,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           if (typeof item === "string") return item;
           const node = item as UsjNode;
 
-          if (node.type === "book" && node.code) {
-            const bookContent = node.content ? convertToUsfm(node.content, isFirstChapter) : "";
-            return `\\id ${node.code} ${bookContent}\n`;
+          if (node.type === "book") {
+            // Book identification (\id) and its children are excluded from export
+            return "";
           }
           if (node.type === "chapter" && node.number) {
             return `\\c ${node.number}\n`;
@@ -887,7 +893,11 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             return `\\v ${node.number} `;
           }
           if (node.type === "para" && node.marker) {
-            // Skip intro paragraphs if not including intro (only for chapter 1)
+            // Always exclude book-header markers (\h, \toc1, \toc2, \toc3)
+            if (isFirstChapter && isBookHeaderMarker(node.marker)) {
+              return "";
+            }
+            // Skip intro/title markers if not including intro (only for chapter 1)
             if (!includeIntro && isFirstChapter && isIntroMarker(node.marker)) {
               return "";
             }
@@ -1097,8 +1107,17 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           if (typeof item === "string") return item;
           const node = item as UsjNode;
 
-          // Skip intro paragraphs if not including intro (only for chapter 1)
+          // Skip book identification node (\id and its children like \h, \toc*)
+          if (node.type === "book") {
+            return null;
+          }
+
           if (node.type === "para" && node.marker) {
+            // Always exclude book-header markers (\h, \toc1, \toc2, \toc3) — not scripture content
+            if (isFirstChapter && isBookHeaderMarker(node.marker)) {
+              return null;
+            }
+            // Skip intro/title markers if not including intro (only for chapter 1)
             if (!includeIntro && isFirstChapter && isIntroMarker(node.marker)) {
               return null;
             }
