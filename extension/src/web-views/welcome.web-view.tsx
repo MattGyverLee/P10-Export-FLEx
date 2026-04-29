@@ -1585,7 +1585,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   }, [usjJson, isRtl]);
 
   return (
-    <div id="flex-export-container" className="tw-p-4 tw-min-h-screen tw-bg-background tw-text-foreground" dir={isUiRtl ? "rtl" : "ltr"}>
+    <div id="flex-export-container" className="tw-p-4 tw-min-h-screen tw-bg-background tw-text-foreground tw-font-sans" dir={isUiRtl ? "rtl" : "ltr"}>
       <div id="flex-export-content" className="tw-mx-auto">
         {/* Settings Row - Three inline boxes that wrap on narrow screens */}
         <div id="settings-row" className="tw-flex tw-flex-wrap tw-items-start tw-gap-4 tw-mb-8">
@@ -1651,50 +1651,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
               </Label>
             </div>
             <div id="include-export-content" className="tw-px-4 tw-py-3 tw-flex tw-flex-col tw-gap-1">
-              <label id="include-footnotes-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer tw-font-sans">
-                <Checkbox
-                  id="include-footnotes-checkbox"
-                  checked={includeFootnotes}
-                  onCheckedChange={(checked: boolean | "indeterminate") => setIncludeFootnotes(checked === true)}
-                />
-                <span id="include-footnotes-label" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_footnotes%"]}</span>
-              </label>
-              <label id="include-crossrefs-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer tw-font-sans">
-                <Checkbox
-                  id="include-crossrefs-checkbox"
-                  checked={includeCrossRefs}
-                  onCheckedChange={(checked: boolean | "indeterminate") => setIncludeCrossRefs(checked === true)}
-                />
-                <span id="include-crossrefs-label" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_crossReferences%"]}</span>
-              </label>
-              <label id="include-intro-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer tw-font-sans">
-                <Checkbox
-                  id="include-intro-checkbox"
-                  checked={includeIntro}
-                  onCheckedChange={(checked: boolean | "indeterminate") => setIncludeIntro(checked === true)}
-                  disabled={scrRef.chapterNum !== 1}
-                />
-                <span id="include-intro-label" className={`tw-text-sm ${scrRef.chapterNum !== 1 ? "tw-text-muted-foreground" : "tw-text-foreground"}`}>
-                  {localizedStrings["%flexExport_introduction%"]}
-                </span>
-              </label>
-              <label id="include-remarks-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer tw-font-sans">
-                <Checkbox
-                  id="include-remarks-checkbox"
-                  checked={includeRemarks}
-                  onCheckedChange={(checked: boolean | "indeterminate") => setIncludeRemarks(checked === true)}
-                />
-                <span id="include-remarks-label" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_remarks%"]}</span>
-              </label>
-              <label id="include-figures-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer tw-font-sans">
-                <Checkbox
-                  id="include-figures-checkbox"
-                  checked={includeFigures}
-                  onCheckedChange={(checked: boolean | "indeterminate") => setIncludeFigures(checked === true)}
-                />
-                <span id="include-figures-label" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_figures%"]}</span>
-              </label>
-              <label id="include-book-headers-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer tw-font-sans">
+              <Label id="include-book-headers-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
                 <Checkbox
                   id="include-book-headers-checkbox"
                   checked={includeBookHeaders}
@@ -1707,7 +1664,50 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                 >
                   {localizedStrings["%flexExport_bookHeaders%"]}
                 </span>
-              </label>
+              </Label>
+              <Label id="include-intro-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+                <Checkbox
+                  id="include-intro-checkbox"
+                  checked={includeIntro}
+                  onCheckedChange={(checked: boolean | "indeterminate") => setIncludeIntro(checked === true)}
+                  disabled={scrRef.chapterNum !== 1}
+                />
+                <span id="include-intro-label" className={`tw-text-sm ${scrRef.chapterNum !== 1 ? "tw-text-muted-foreground" : "tw-text-foreground"}`}>
+                  {localizedStrings["%flexExport_introduction%"]}
+                </span>
+              </Label>
+              <Label id="include-figures-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+                <Checkbox
+                  id="include-figures-checkbox"
+                  checked={includeFigures}
+                  onCheckedChange={(checked: boolean | "indeterminate") => setIncludeFigures(checked === true)}
+                />
+                <span id="include-figures-label" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_figures%"]}</span>
+              </Label>
+              <Label id="include-crossrefs-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+                <Checkbox
+                  id="include-crossrefs-checkbox"
+                  checked={includeCrossRefs}
+                  onCheckedChange={(checked: boolean | "indeterminate") => setIncludeCrossRefs(checked === true)}
+                />
+                <span id="include-crossrefs-label" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_crossReferences%"]}</span>
+              </Label>
+              <Label id="include-remarks-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+                <Checkbox
+                  id="include-remarks-checkbox"
+                  checked={includeRemarks}
+                  onCheckedChange={(checked: boolean | "indeterminate") => setIncludeRemarks(checked === true)}
+                />
+                <span id="include-remarks-label" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_remarks%"]}</span>
+              </Label>
+              <Label id="include-footnotes-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
+                <Checkbox
+                  id="include-footnotes-checkbox"
+                  checked={includeFootnotes}
+                  onCheckedChange={(checked: boolean | "indeterminate") => setIncludeFootnotes(checked === true)}
+                />
+                <span id="include-footnotes-label" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_footnotes%"]}</span>
+              </Label>
             </div>
           </div>
 
@@ -1819,23 +1819,25 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                   <ExportProgressBar steps={exportSteps} />
                 )}
 
-                {exportStatus && (
-                  <div className="tw-flex tw-items-center tw-gap-3">
-                    <span id="export-status-message" className={`tw-text-sm ${exportStatus.success ? "tw-text-green-600" : "tw-text-red-600"}`}>
-                      {exportStatus.message}
-                    </span>
-                    {exportStatus.success && lastExportedText && (
-                      <Button
-                        id="open-in-flex-button"
-                        size="sm"
-                        onClick={handleOpenInFlex}
-                      >
-                        Open in FLEx
-                      </Button>
-                    )}
-                  </div>
+                {exportStatus?.success && lastExportedText && (
+                  <Button
+                    id="open-in-flex-button"
+                    size="sm"
+                    onClick={handleOpenInFlex}
+                  >
+                    Open in FLEx
+                  </Button>
                 )}
               </div>
+
+              {exportStatus && (
+                <p
+                  id="export-status-message"
+                  className={`tw-text-sm tw-whitespace-normal tw-break-words ${exportStatus.success ? "tw-text-green-600" : "tw-text-red-600"}`}
+                >
+                  {exportStatus.message}
+                </p>
+              )}
 
               {/* Overwrite Confirmation Modal */}
               <Modal open={showOverwriteConfirm} onClose={handleCancelOverwrite}>
