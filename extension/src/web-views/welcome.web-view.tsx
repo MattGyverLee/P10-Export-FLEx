@@ -576,7 +576,12 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     if (!scrRef.book) return;
 
     const bookName = Canon.bookIdToEnglishName(scrRef.book);
-    const padChapter = (n: number) => String(n).padStart(2, '0');
+    // Psalms is the only canonical book with more than 100 chapters (150),
+    // so it gets 3-digit padding to keep lexicographic sort aligned with
+    // numeric order in FLEx. Every other book maxes out below 100 and uses
+    // 2-digit padding.
+    const padWidth = scrRef.book === "PSA" ? 3 : 2;
+    const padChapter = (n: number) => String(n).padStart(padWidth, '0');
 
     let generatedName: string;
 
