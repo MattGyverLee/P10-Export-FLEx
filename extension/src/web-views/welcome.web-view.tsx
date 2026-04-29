@@ -1814,6 +1814,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                     ?.replace("{endChapter}", String(endChapter))}
             </span>
           )}
+        {/* FLExTrans attribution */}
+        <div id="flextrans-attribution" className="tw-mt-6 tw-text-center tw-text-xs tw-text-muted-foreground">
+          Brought to you by the FLExTrans team, SIL Global
         </div>
       </div>
     </div>
