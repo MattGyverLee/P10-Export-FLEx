@@ -519,27 +519,23 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     };
   }, [selectedFlexProject, savedWsCode]);
 
-  // Auto-generate text name from book and chapter range
-  // Includes Paratext project code as suffix (e.g., "1 John 5 - BVM")
+  // Auto-generate text name from book and chapter range (FLExTrans-compatible format)
   useEffect(() => {
     if (!scrRef.book) return;
 
     const bookName = Canon.bookIdToEnglishName(scrRef.book);
+    const padChapter = (n: number) => String(n).padStart(2, '0');
+
     let generatedName: string;
 
     if (scrRef.chapterNum === endChapter) {
-      generatedName = `${bookName} ${scrRef.chapterNum}`;
+      generatedName = `${bookName} ${padChapter(scrRef.chapterNum)}`;
     } else {
-      generatedName = `${bookName} ${scrRef.chapterNum}-${endChapter}`;
-    }
-
-    // Append Paratext project code if available
-    if (selectedProject?.label) {
-      generatedName = `${generatedName} - ${selectedProject.label}`;
+      generatedName = `${bookName} ${padChapter(scrRef.chapterNum)}-${padChapter(endChapter)}`;
     }
 
     setTextName(generatedName);
-  }, [scrRef.book, scrRef.chapterNum, endChapter, selectedProject]);
+  }, [scrRef.book, scrRef.chapterNum, endChapter]);
 
   // Check text name in real-time to show expected export name
   useEffect(() => {
