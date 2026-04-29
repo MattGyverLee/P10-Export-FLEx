@@ -1659,7 +1659,6 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                     {exportStatus.success && lastExportedText && (
                       <Button
                         id="open-in-flex-button"
-                        variant="outline"
                         size="sm"
                         onClick={handleOpenInFlex}
                       >
