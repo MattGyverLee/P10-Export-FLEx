@@ -1201,7 +1201,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       if (flexStatus.isRunning && !flexStatus.sharingEnabled) {
         setExportStatus({
           success: false,
-          message: "FieldWorks is open without sharing enabled. Please close FLEx or enable Project Sharing in Edit > Project Properties > Sharing tab."
+          message: "The FieldWorks project chosen needs to have sharing enabled. Enable it via Edit > Project Properties > Sharing tab, or close FLEx and try again."
         });
         updateStep('export', 'error');
         setIsExporting(false);
