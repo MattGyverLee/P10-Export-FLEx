@@ -7,7 +7,12 @@
 
 // Re-implement helper functions from welcome.web-view.tsx for testing
 const isIntroMarker = (marker: string): boolean => {
-  return /^(imt\d?|is\d?|ip|ipi|im|imi|ipq|imq|ipr|iq\d?|ib|ili\d?|iot|io\d?|iex|ie)$/.test(marker);
+  // Also includes main title markers (mt, mt1...) per FLExTrans convention
+  return /^(imt\d?|is\d?|ip|ipi|im|imi|ipq|imq|ipr|iq\d?|ib|ili\d?|iot|io\d?|iex|ie|mt\d?)$/.test(marker);
+};
+
+const isBookHeaderMarker = (marker: string): boolean => {
+  return /^(h\d?|toc\d|toca\d?)$/.test(marker);
 };
 
 const isRemarkMarker = (marker: string): boolean => {
@@ -51,14 +56,20 @@ function filterUsjContent(
       if (typeof item === 'string') return true;
       const node = item as UsjNode;
 
+      // Always exclude book identification node (\id)
+      if (node.type === 'book') return false;
+
       // Filter notes (footnotes and cross-references)
       if (node.type === 'note') {
         if (node.marker === 'f' && !includeFootnotes) return false;
         if (isCrossRefMarker(node.marker || '') && !includeCrossRefs) return false;
       }
 
-      // Filter intro paragraphs (only in first chapter)
+      // Filter para markers
       if (node.type === 'para' && node.marker) {
+        // Always exclude book-header markers (\h, \toc1, \toc2, \toc3)
+        if (isFirstChapter && isBookHeaderMarker(node.marker)) return false;
+        // Filter intro/title markers (only in first chapter)
         if (!includeIntro && isFirstChapter && isIntroMarker(node.marker)) return false;
         if (!includeCrossRefs && node.marker === 'r') return false;
         if (!includeRemarks && isRemarkMarker(node.marker)) return false;
@@ -114,14 +125,40 @@ describe('Content Filtering', () => {
       expect(isIntroMarker('ie')).toBe(true);
     });
 
+    it('identifies main title markers as intro (FLExTrans convention)', () => {
+      expect(isIntroMarker('mt')).toBe(true);
+      expect(isIntroMarker('mt1')).toBe(true);
+      expect(isIntroMarker('mt2')).toBe(true);
+    });
+
     it('rejects non-intro markers', () => {
       expect(isIntroMarker('p')).toBe(false);
       expect(isIntroMarker('v')).toBe(false);
       expect(isIntroMarker('c')).toBe(false);
       expect(isIntroMarker('s')).toBe(false);
-      expect(isIntroMarker('mt')).toBe(false);
       expect(isIntroMarker('h')).toBe(false);
-      expect(isIntroMarker('toc')).toBe(false);
+      expect(isIntroMarker('toc1')).toBe(false);
+    });
+  });
+
+  describe('isBookHeaderMarker', () => {
+    it('identifies running header marker', () => {
+      expect(isBookHeaderMarker('h')).toBe(true);
+      expect(isBookHeaderMarker('h1')).toBe(true);
+    });
+
+    it('identifies toc markers', () => {
+      expect(isBookHeaderMarker('toc1')).toBe(true);
+      expect(isBookHeaderMarker('toc2')).toBe(true);
+      expect(isBookHeaderMarker('toc3')).toBe(true);
+      expect(isBookHeaderMarker('toca1')).toBe(true);
+    });
+
+    it('rejects non-header markers', () => {
+      expect(isBookHeaderMarker('p')).toBe(false);
+      expect(isBookHeaderMarker('mt')).toBe(false);
+      expect(isBookHeaderMarker('id')).toBe(false);
+      expect(isBookHeaderMarker('toc')).toBe(false);
     });
   });
 
@@ -264,8 +301,93 @@ describe('Content Filtering', () => {
       });
     });
 
+    describe('book node filtering', () => {
+      const contentWithBookNode: (UsjNode | string)[] = [
+        {
+          type: 'book',
+          marker: 'id',
+          code: 'GEN',
+          content: ['Genesis'],
+        },
+        {
+          type: 'chapter',
+          marker: 'c',
+          number: '1',
+        },
+        {
+          type: 'para',
+          marker: 'p',
+          content: ['In the beginning...'],
+        },
+      ];
+
+      it('always removes book node regardless of options', () => {
+        const result = filterUsjContent(contentWithBookNode, true, defaultOptions);
+
+        expect(result).toHaveLength(2);
+        expect(result.find((item) => typeof item !== 'string' && (item as UsjNode).type === 'book')).toBeUndefined();
+        expect(result[0]).toHaveProperty('type', 'chapter');
+      });
+    });
+
+    describe('book header marker filtering', () => {
+      const contentWithHeaders: (UsjNode | string)[] = [
+        {
+          type: 'para',
+          marker: 'h',
+          content: ['Genesis'],
+        },
+        {
+          type: 'para',
+          marker: 'toc1',
+          content: ['The First Book of Moses, called Genesis'],
+        },
+        {
+          type: 'para',
+          marker: 'toc2',
+          content: ['Genesis'],
+        },
+        {
+          type: 'para',
+          marker: 'mt1',
+          content: ['Genesis'],
+        },
+        {
+          type: 'chapter',
+          marker: 'c',
+          number: '1',
+        },
+      ];
+
+      it('always removes \\h and \\toc markers in first chapter', () => {
+        const result = filterUsjContent(contentWithHeaders, true, defaultOptions);
+
+        expect(result.find((item) => typeof item !== 'string' && (item as UsjNode).marker === 'h')).toBeUndefined();
+        expect(result.find((item) => typeof item !== 'string' && (item as UsjNode).marker === 'toc1')).toBeUndefined();
+        expect(result.find((item) => typeof item !== 'string' && (item as UsjNode).marker === 'toc2')).toBeUndefined();
+      });
+
+      it('keeps \\mt1 when includeIntro is true', () => {
+        const result = filterUsjContent(contentWithHeaders, true, { ...defaultOptions, includeIntro: true });
+
+        expect(result.find((item) => typeof item !== 'string' && (item as UsjNode).marker === 'mt1')).toBeDefined();
+      });
+
+      it('removes \\mt1 when includeIntro is false (FLExTrans: start at \\c 1)', () => {
+        const result = filterUsjContent(contentWithHeaders, true, { ...defaultOptions, includeIntro: false });
+
+        expect(result.find((item) => typeof item !== 'string' && (item as UsjNode).marker === 'mt1')).toBeUndefined();
+        expect(result[0]).toHaveProperty('type', 'chapter');
+      });
+    });
+
     describe('introduction filtering', () => {
       const contentWithIntro: (UsjNode | string)[] = [
+        {
+          type: 'para',
+          marker: 'mt1',
+          content: ['The Book of Genesis'],
+        },
         {
           type: 'para',
           marker: 'imt',
@@ -288,18 +410,19 @@ describe('Content Filtering', () => {
         },
       ];
 
-      it('keeps intro paragraphs when includeIntro is true', () => {
+      it('keeps intro and title paragraphs when includeIntro is true', () => {
         const result = filterUsjContent(contentWithIntro, true, {
           ...defaultOptions,
           includeIntro: true,
         });
 
-        expect(result).toHaveLength(4);
-        expect(result[0]).toHaveProperty('marker', 'imt');
-        expect(result[1]).toHaveProperty('marker', 'ip');
+        expect(result).toHaveLength(5);
+        expect(result[0]).toHaveProperty('marker', 'mt1');
+        expect(result[1]).toHaveProperty('marker', 'imt');
+        expect(result[2]).toHaveProperty('marker', 'ip');
       });
 
-      it('removes intro paragraphs in first chapter when includeIntro is false', () => {
+      it('removes intro and title paragraphs in first chapter when includeIntro is false', () => {
         const result = filterUsjContent(contentWithIntro, true, {
           ...defaultOptions,
           includeIntro: false,
@@ -317,7 +440,7 @@ describe('Content Filtering', () => {
         });
 
         // Intro markers are only removed in first chapter
-        expect(result).toHaveLength(4);
+        expect(result).toHaveLength(5);
       });
     });
 
