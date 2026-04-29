@@ -174,8 +174,13 @@ namespace FlexTextBridge.Services
                 var stText = stTextFactory.Create();
                 text.ContentsOA = stText;
 
-                // Create paragraphs
-                int paragraphCount = 0;
+                // Create paragraphs.
+                // totalCreated tracks all paragraphs added to stText (used for the
+                // empty-fallback guard). scriptureParagraphCount excludes pure-analysis
+                // paragraphs (e.g. a stand-alone \id BOOK or \c N line) because those
+                // are USFM metadata, not translatable scripture content. Issue #16.
+                int totalCreated = 0;
+                int scriptureParagraphCount = 0;
                 foreach (var para in paragraphs)
                 {
                     if (para.Segments.Count == 0) continue;
@@ -198,16 +203,20 @@ namespace FlexTextBridge.Services
                     }
 
                     stPara.Contents = bldr.GetString();
-                    paragraphCount++;
+                    totalCreated++;
+                    if (para.Segments.Any(s => s.IsVernacular))
+                    {
+                        scriptureParagraphCount++;
+                    }
                 }
 
-                // If no paragraphs, create at least one empty paragraph
-                if (paragraphCount == 0)
+                // If no paragraphs were created at all, add an empty placeholder.
+                if (totalCreated == 0)
                 {
                     var emptyPara = stTxtParaFactory.Create();
                     stText.ParagraphsOS.Add(emptyPara);
                     emptyPara.Contents = TsStringUtils.EmptyString(vernWs);
-                    paragraphCount = 1;
+                    scriptureParagraphCount = 1;
                 }
 
                 undoHelper.RollBack = false; // Commit the transaction
@@ -219,7 +228,7 @@ namespace FlexTextBridge.Services
                     throw new InvalidOperationException($"Text was created but verification failed for GUID {textGuid}");
                 }
 
-                return (paragraphCount, textGuid);
+                return (scriptureParagraphCount, textGuid);
             }
         }
 
