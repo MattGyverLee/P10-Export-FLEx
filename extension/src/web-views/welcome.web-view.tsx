@@ -325,6 +325,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // Last exported text info for "Open in FLEx" button
   const [lastExportedText, setLastExportedText] = useState<{ projectName: string; textGuid: string } | undefined>();
 
+  // Counter incremented after each successful export to re-trigger the "Will be created as" check
+  const [exportCount, setExportCount] = useState(0);
+
   // Get chapter count for current book
   const chapterCount = useMemo(() => {
     const bookNum = Canon.bookIdToNumber(scrRef.book);
@@ -589,7 +592,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       clearTimeout(timeoutId);
       setIsCheckingName(false);
     };
-  }, [selectedFlexProject, textName, overwriteEnabled]);
+  }, [selectedFlexProject, textName, overwriteEnabled, exportCount]);
 
   // Fetch available projects (only editable projects unless secret mode enabled)
   useEffect(() => {
@@ -1239,6 +1242,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           .replace("{paragraphCount}", String(result.paragraphCount || 0))
           .replace("{textName}", result.textName || nameToUse);
         setExportStatus({ success: true, message: successMessage });
+        setExportCount(prev => prev + 1);
 
         // Store text GUID for "Open in FLEx" button
         if (result.textGuid) {
