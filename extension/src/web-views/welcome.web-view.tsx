@@ -241,6 +241,12 @@ const NAVIGATION_EVENT_TYPE = "flexExport.navigationContext";
 interface NavigationContext {
   projectId?: string;
   initialScrRef?: SerializedVerseRef;
+  /**
+   * Reason the host did NOT auto-select a project. Surfaced inline in the
+   * StatusStrip instead of as a host-level toast so the explanation is
+   * adjacent to the empty Project field the user is staring at.
+   */
+  notExportableReason?: "resource";
 }
 
 // RTL language codes (primary language codes that use right-to-left scripts)
@@ -362,6 +368,11 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // End chapter for range selection (defaults to start chapter)
   const [endChapter, setEndChapter] = useState(initialScrRef?.chapterNum || 1);
 
+  // Reason the host couldn't auto-select a source project (e.g. invoked from
+  // a resource pane). Surfaced as an info-variant message in the StatusStrip
+  // until the user picks an editable project.
+  const [notExportableReason, setNotExportableReason] = useState<"resource" | undefined>();
+
   // Pending nav target — when a nav event arrives carrying a different projectId
   // than the current panel's projectId, we stash the scrRef here and defer
   // applying it until the projectId prop has actually updated and the new
@@ -382,6 +393,10 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       (ctx: NavigationContext) => {
         const targetRef = ctx.initialScrRef;
         const targetProjectId = ctx.projectId;
+
+        // Track the host's reason for not auto-selecting a project. Cleared
+        // when the user picks an editable project below.
+        setNotExportableReason(ctx.notExportableReason);
 
         if (targetProjectId && targetProjectId !== projectId) {
           // Different PT project — switch via WebViewDefinition so the
@@ -952,6 +967,8 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   const handleProjectChange = useCallback(
     (option: ProjectOption | undefined) => {
       if (option) {
+        // User picked a project — the "resource pane" notice no longer applies.
+        setNotExportableReason(undefined);
         updateWebViewDefinition({ projectId: option.id });
       }
     },
@@ -1797,8 +1814,14 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         : (localizedStrings["%flexExport_flexLoadError%"] || "").replace("{error}", flexLoadError);
       return { variant: "error", message };
     }
+    if (notExportableReason === "resource") {
+      return {
+        variant: "info",
+        message: localizedStrings["%flexExport_resourceNotExportable%"],
+      };
+    }
     return {};
-  }, [exportStatus, isExporting, exportSteps, flexLoadError, localizedStrings]);
+  }, [exportStatus, isExporting, exportSteps, flexLoadError, notExportableReason, localizedStrings]);
 
   return (
     <div id="flex-export-container" className="tw-p-4 tw-min-h-screen tw-bg-background tw-text-foreground tw-font-sans" dir={isUiRtl ? "rtl" : "ltr"}>

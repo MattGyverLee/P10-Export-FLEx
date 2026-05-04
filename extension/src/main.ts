@@ -45,6 +45,13 @@ const NAVIGATION_EVENT_TYPE = "flexExport.navigationContext";
 interface NavigationContext {
   projectId?: string;
   initialScrRef?: SerializedVerseRef;
+  /**
+   * Reason a source project was NOT auto-selected, so the WebView can surface
+   * an inline explanation in its StatusStrip (replaces a global toast that
+   * appeared outside the panel and was easy to miss).
+   * - "resource": invoked from a resource pane, which is read-only.
+   */
+  notExportableReason?: "resource";
 }
 
 /** All localization keys used in the WebView */
@@ -202,6 +209,7 @@ export async function activate(context: ExecutionActivationContext) {
     async (webViewId?: string) => {
       let projectId: string | undefined;
       let initialScrRef: SerializedVerseRef | undefined;
+      let notExportableReason: "resource" | undefined;
 
       // If invoked from a WebView, get the project and current scripture reference
       if (webViewId) {
@@ -218,11 +226,10 @@ export async function activate(context: ExecutionActivationContext) {
               if (isEditable) {
                 projectId = sourceProjectId;
               } else {
-                // Show info notification that resources cannot be exported
-                papi.notifications.send({
-                  message: "%flexExport_resourceNotExportable%",
-                  severity: "info",
-                });
+                // Resource panes are read-only. Surface this inline in the
+                // WebView's StatusStrip rather than as a host notification
+                // (which appears outside the panel and is easy to miss).
+                notExportableReason = "resource";
               }
             } catch {
               // If we can't check, don't auto-select the project
@@ -261,7 +268,7 @@ export async function activate(context: ExecutionActivationContext) {
       // component gets these via state at mount (still useful as a redundant
       // signal). On reuse, this is the ONLY channel that reaches the running
       // React component — see NAVIGATION_EVENT_TYPE comment.
-      navigationContextEmitter.emit({ projectId, initialScrRef });
+      navigationContextEmitter.emit({ projectId, initialScrRef, notExportableReason });
 
       return openedWebViewId;
     }
