@@ -128,7 +128,7 @@ function StatusStrip({ variant, message, steps, trailing }: StatusStripProps) {
   const style = hasMessage ? STATUS_VARIANT_STYLES[variant] : undefined;
 
   const containerClasses = hasMessage && style
-    ? `tw-min-h-[2.75rem] tw-w-full tw-rounded-md tw-border tw-p-3 tw-flex tw-items-center tw-gap-4 ${style.container}`
+    ? `tw-min-h-[2.75rem] tw-w-full tw-rounded-md tw-border tw-p-2.5 tw-flex tw-items-center tw-gap-4 ${style.container}`
     : "tw-min-h-[2.75rem] tw-w-full tw-flex tw-items-center tw-justify-end";
 
   return (
@@ -140,7 +140,7 @@ function StatusStrip({ variant, message, steps, trailing }: StatusStripProps) {
     >
       {hasMessage && style && (
         <>
-          <span className="tw-flex tw-h-5 tw-w-5 tw-shrink-0 tw-items-center tw-justify-center">
+          <span className="tw-flex tw-h-5 tw-w-5 tw-shrink-0 tw-items-center tw-justify-center tw-mr-1">
             <style.Icon className={`tw-h-4 tw-w-4 ${style.spinning ? "tw-animate-spin" : ""}`} />
           </span>
           <div className="tw-flex-1 tw-min-w-0">
@@ -1875,6 +1875,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         message: localizedStrings["%flexExport_resourceNotExportable%"],
       };
     }
+    // Help message when FLEx project is not selected
+    if (!selectedFlexProject) {
+      return {
+        variant: "info",
+        message: "Please select a Fieldworks Project and then click Export to FLEx.",
+      };
+    }
     return {};
   }, [
     exportStatus,
@@ -1886,6 +1893,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     booksError,
     chaptersError,
     notExportableReason,
+    selectedFlexProject,
     localizedStrings,
   ]);
 
@@ -1914,7 +1922,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             </div>
             <div id="paratext-settings-content" className="tw-px-4 tw-py-3 tw-space-y-3">
               {/* Project Selection - Ctrl+click to include resources (secret mode) */}
-              <div id="paratext-project-row" className="tw-flex tw-items-center tw-gap-3">
+              <div id="paratext-project-row" className="tw-flex tw-items-center tw-gap-2">
                 <Label id="paratext-project-label" htmlFor="paratext-project-selector" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap tw-me-2">
                   {localizedStrings["%flexExport_project%"]}
                 </Label>
@@ -2037,7 +2045,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             </div>
             <div id="flex-settings-content" className="tw-px-4 tw-py-3 tw-space-y-3">
               {/* FLEx Project Selector */}
-              <div id="flex-project-row" className="tw-flex tw-items-center tw-gap-3">
+              <div id="flex-project-row" className="tw-flex tw-items-center tw-gap-2">
                 <Label id="flex-project-label" htmlFor="flex-project-selector" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap tw-me-2">
                   {localizedStrings["%flexExport_project%"]}
                 </Label>
@@ -2056,7 +2064,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
               {/* Writing System Selector - only shown when multiple vernacular WS exist */}
               {flexProjectDetails && writingSystemOptions.length > 1 && (
-                <div id="writing-system-row" className="tw-flex tw-items-center tw-gap-3">
+                <div id="writing-system-row" className="tw-flex tw-items-center tw-gap-2">
                   <Label id="writing-system-label" htmlFor="writing-system-selector" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap tw-me-2">
                     {localizedStrings["%flexExport_writingSystem%"]}
                   </Label>
@@ -2076,7 +2084,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
               {/* Text Name Field */}
               <div id="text-name-section" className="tw-flex tw-flex-col tw-gap-1">
-                <div id="text-name-row" className="tw-flex tw-items-center tw-gap-3">
+                <div id="text-name-row" className="tw-flex tw-items-center tw-gap-2">
                   <Label id="text-name-label" htmlFor="text-name-input" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap tw-me-2">
                     {localizedStrings["%flexExport_textName%"]}
                   </Label>
@@ -2097,7 +2105,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
               </div>
 
               {/* Overwrite Toggle */}
-              <div id="overwrite-row" className="tw-flex tw-items-center tw-gap-3">
+              <div id="overwrite-row" className="tw-flex tw-items-center tw-gap-2">
                 <Switch
                   id="overwrite-toggle"
                   checked={overwriteEnabled}
@@ -2174,8 +2182,8 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         />
 
         {/* Scripture Preview */}
-        <div id="scripture-preview-box" className="tw-mt-4 tw-border tw-border-border tw-rounded-md tw-bg-card">
-          <div id="scripture-preview-header" className="tw-p-3 tw-ps-4 tw-border-b tw-border-border tw-bg-muted tw-flex tw-justify-between tw-items-center tw-flex-wrap tw-gap-2">
+        <div id="scripture-preview-box" className="tw-mt-3 tw-border tw-border-border tw-rounded-md tw-bg-card">
+          <div id="scripture-preview-header" className="tw-p-2.5 tw-ps-4 tw-border-b tw-border-border tw-bg-muted tw-flex tw-justify-between tw-items-center tw-flex-wrap tw-gap-2">
             <Label id="scripture-preview-title" className="tw-text-sm tw-font-medium tw-text-foreground">
               {viewMode === "formatted" && localizedStrings["%flexExport_scripturePreview%"]}
               {viewMode === "usfm" && localizedStrings["%flexExport_usfmPreview%"]}
@@ -2208,7 +2216,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
               </Button>
             </div>
           </div>
-          <div id="scripture-preview-content" className="tw-p-4 tw-min-h-64 tw-max-h-96 tw-overflow-auto">
+          <div id="scripture-preview-content" className="tw-p-3 tw-min-h-64 tw-max-h-96 tw-overflow-auto">
             {viewMode === "formatted" && (
               <div
                 id="preview-formatted"
@@ -2242,7 +2250,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         </div>
 
         {/* Status */}
-        <div id="loading-status" className="tw-mt-4 tw-text-xs tw-text-muted-foreground">
+        <div id="loading-status" className="tw-mt-2 tw-text-xs tw-text-muted-foreground">
           {isLoading && localizedStrings["%flexExport_loadingScripture%"]}
           {!isLoading && chaptersUSJ.length > 0 && (
             <span id="loaded-chapters-status">
@@ -2259,7 +2267,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         </div>
 
         {/* FLExTrans attribution */}
-        <div id="flextrans-attribution" className="tw-mt-6 tw-text-center tw-text-xs tw-text-muted-foreground">
+        <div id="flextrans-attribution" className="tw-mt-4 tw-text-center tw-text-xs tw-text-muted-foreground">
           Brought to you by the FLExTrans team, SIL Global
         </div>
       </div>
