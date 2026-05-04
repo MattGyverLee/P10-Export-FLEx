@@ -28,6 +28,25 @@ interface ExportToFlexWebViewOptions extends GetWebViewOptions {
   initialScrRef?: SerializedVerseRef;
 }
 
+/**
+ * Payload pushed to the WebView every time the Export menu item is invoked.
+ *
+ * Paranext's openWebView with `existingId: "?"` brings an already-open panel to
+ * front WITHOUT re-running the WebView provider or pushing new props/state to
+ * the running React component (see web-view.service-host.ts: when an existing
+ * webView is found it just calls `updateWebViewDefinitionSync(id, {}, true)`
+ * for bringToFront and returns). So host-supplied projectId/initialScrRef in
+ * the openWebView options reach the component on FIRST creation only.
+ *
+ * On every menu invocation we also fire this event; the WebView listens and
+ * re-syncs scripture ref + project to the menu's invocation context. Issue #14.
+ */
+const NAVIGATION_EVENT_TYPE = "flexExport.navigationContext";
+interface NavigationContext {
+  projectId?: string;
+  initialScrRef?: SerializedVerseRef;
+}
+
 /** All localization keys used in the WebView */
 const LOCALIZATION_KEYS = [
   "%flexExport_title%",
@@ -169,6 +188,13 @@ export async function activate(context: ExecutionActivationContext) {
     welcomeWebViewProvider
   );
 
+  // Network event used to push the menu-invocation context (project + scrRef)
+  // into an already-open Export panel. See NAVIGATION_EVENT_TYPE comment above.
+  const navigationContextEmitter = papi.network.createNetworkEventEmitter<NavigationContext>(
+    NAVIGATION_EVENT_TYPE
+  );
+  context.registrations.add(navigationContextEmitter);
+
   // Register command to open the export dialog
   // When invoked from a WebView menu, webViewId is passed automatically as the first argument
   const openExportDialogPromise = papi.commands.registerCommand(
@@ -225,7 +251,19 @@ export async function activate(context: ExecutionActivationContext) {
         initialScrRef,
       };
 
-      return papi.webViews.openWebView(welcomeWebViewType, undefined, { existingId: "?", ...options });
+      const openedWebViewId = await papi.webViews.openWebView(
+        welcomeWebViewType,
+        undefined,
+        { existingId: "?", ...options }
+      );
+
+      // Push the invocation context to a running panel. On first creation the
+      // component gets these via state at mount (still useful as a redundant
+      // signal). On reuse, this is the ONLY channel that reaches the running
+      // React component — see NAVIGATION_EVENT_TYPE comment.
+      navigationContextEmitter.emit({ projectId, initialScrRef });
+
+      return openedWebViewId;
     }
   );
 

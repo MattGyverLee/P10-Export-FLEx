@@ -1,8 +1,8 @@
 import { WebViewProps } from "@papi/core";
 import papi from "@papi/frontend";
 import { useLocalizedStrings, useProjectSetting, useSetting } from "@papi/frontend/react";
-import { useState, useMemo, useCallback, useEffect } from "react";
-import { Button, Checkbox, ComboBox, Input, Label, Switch } from "platform-bible-react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { Button, Checkbox, ComboBox, Input, Label, Switch, useEvent } from "platform-bible-react";
 import { ChapterOnlyBookControl } from "./components/ChapterOnlyBookControl";
 import { isPlatformError, getChaptersForBook } from "platform-bible-utils";
 import { Canon, SerializedVerseRef } from "@sillsdev/scripture";
@@ -150,6 +150,18 @@ const DEFAULT_PROJECT_SETTINGS: ProjectExportSettings = {
 // Default scripture reference
 const DEFAULT_SCR_REF: SerializedVerseRef = { book: "GEN", chapterNum: 1, verseNum: 1 };
 
+// Network event the host fires every time the menu item is invoked. Carries
+// the Paratext project + scripture ref of the menu invocation context. The
+// host-side openWebView path with `existingId: "?"` does NOT push new state
+// to a running React component on reuse (paranext-core just brings the panel
+// to front), so this event is the side channel used to keep the panel in sync
+// when reopened from a different project or chapter. See main.ts. Issue #14.
+const NAVIGATION_EVENT_TYPE = "flexExport.navigationContext";
+interface NavigationContext {
+  projectId?: string;
+  initialScrRef?: SerializedVerseRef;
+}
+
 // RTL language codes (primary language codes that use right-to-left scripts)
 const RTL_LANGUAGES = ["ar", "he", "fa", "ps", "ur", "yi", "ku", "sd", "ug"];
 
@@ -250,7 +262,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   const uiLanguage = Array.isArray(interfaceLanguages) ? interfaceLanguages[0] : "en";
   const isUiRtl = isRtlLanguage(uiLanguage);
 
-  // Get initial scripture reference from state (captured when dialog was opened)
+  // Get initial scripture reference from state (captured when dialog was opened).
+  // This is only authoritative on first mount; subsequent menu invocations push
+  // updated context via the NAVIGATION_EVENT_TYPE network event below.
   const initialScrRef = state?.initialScrRef as SerializedVerseRef | undefined;
 
   // Scripture reference state - initialized from the captured reference
@@ -259,51 +273,69 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // End chapter for range selection (defaults to start chapter)
   const [endChapter, setEndChapter] = useState(initialScrRef?.chapterNum || 1);
 
-  // When the panel is reused (existingId: "?") with a new project/scripture reference, sync state
-  useEffect(() => {
-    if (!initialScrRef) return;
-    setScrRef({ ...initialScrRef, verseNum: 1 });
-    setEndChapter(initialScrRef.chapterNum || 1);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state?.initialScrRef]);
+  // Pending nav target — when a nav event arrives carrying a different projectId
+  // than the current panel's projectId, we stash the scrRef here and defer
+  // applying it until the projectId prop has actually updated and the new
+  // project's available-books list has loaded. This avoids the
+  // availableBookIds fallback resetting scrRef to the old project's first
+  // book in the brief window before the new project's books arrive.
+  const pendingNavRef = useRef<SerializedVerseRef | undefined>(undefined);
 
-  // Per-project settings using flat WebView state keys (avoids nested object serialization issues)
-  // Each setting uses a compound key: "settingName-projectId"
+  // Subscribe to navigation context pushed by the host on every menu
+  // invocation. See NAVIGATION_EVENT_TYPE comment.
+  const navigationEvent = useMemo(
+    () => papi.network.getNetworkEvent<NavigationContext>(NAVIGATION_EVENT_TYPE),
+    []
+  );
+  useEvent(
+    navigationEvent,
+    useCallback(
+      (ctx: NavigationContext) => {
+        const targetRef = ctx.initialScrRef;
+        const targetProjectId = ctx.projectId;
+
+        if (targetProjectId && targetProjectId !== projectId) {
+          // Different PT project — switch via WebViewDefinition so the
+          // projectId prop updates and downstream effects (books list, USJ
+          // fetch, etc.) refire. Apply the scrRef once the books for the
+          // new project arrive (see availableBookIdsForProjectId effect).
+          if (targetRef) pendingNavRef.current = { ...targetRef, verseNum: 1 };
+          updateWebViewDefinition({ projectId: targetProjectId });
+        } else if (targetRef) {
+          // Same project — apply ref immediately
+          setScrRef({ ...targetRef, verseNum: 1 });
+          setEndChapter(targetRef.chapterNum || 1);
+        }
+      },
+      [projectId, updateWebViewDefinition]
+    )
+  );
+
+  // ---- Persistence ----
+  //
+  // Two-tier model:
+  //   1. `savedX` / `setSavedX` — useWebViewState slots backed by the WebView's
+  //      persisted state. These are READ at render time (so we always see the
+  //      latest disk value when the key changes — e.g. PT project switch via
+  //      nav event) but WRITTEN only on a successful export.
+  //   2. `x` / `setX` — local React state that drives the UI. Seeded from the
+  //      saved slot on key change, mutated freely by the user.
+  //
+  // This separation means that fiddling with the dropdowns/checkboxes does
+  // NOT mutate persisted state — only a successful export does. See
+  // handleExport's success branch below. (Auto-heal writes that *clear* a
+  // saved value when its target no longer exists are intentional exceptions.)
+  //
+  // Keys:
+  //   flexProjectName-<ptProjectId>                 — default FLEx project for this PT project
+  //   writingSystemCode-<ptProjectId>-<flexProject> — WS used last with this (PT, FLEx) pair
+  //   include*-<ptProjectId>                        — content-filter toggles per PT project
+  //   overwriteEnabled                              — session-scoped, intentionally not per-project
+
   const [savedFlexProjectName, setSavedFlexProjectName] = useWebViewState<string>(
     `flexProjectName-${projectId || "default"}`,
     ""
   );
-  const [savedWritingSystemCode, setSavedWritingSystemCode] = useWebViewState<string>(
-    `writingSystemCode-${projectId || "default"}`,
-    ""
-  );
-  const [includeFootnotes, setIncludeFootnotes] = useWebViewState<boolean>(
-    `includeFootnotes-${projectId || "default"}`,
-    false
-  );
-  const [includeCrossRefs, setIncludeCrossRefs] = useWebViewState<boolean>(
-    `includeCrossRefs-${projectId || "default"}`,
-    false
-  );
-  const [includeIntro, setIncludeIntro] = useWebViewState<boolean>(
-    `includeIntro-${projectId || "default"}`,
-    false
-  );
-  const [includeRemarks, setIncludeRemarks] = useWebViewState<boolean>(
-    `includeRemarks-${projectId || "default"}`,
-    false
-  );
-  const [includeFigures, setIncludeFigures] = useWebViewState<boolean>(
-    `includeFigures-${projectId || "default"}`,
-    true
-  );
-  const [includeBookHeaders, setIncludeBookHeaders] = useWebViewState<boolean>(
-    `includeBookHeaders-${projectId || "default"}`,
-    false
-  );
-
-  // Overwrite setting - independent of project selection (stored in global WebView state)
-  const [overwriteEnabled, setOverwriteEnabled] = useWebViewState<boolean>("overwriteEnabled", false);
 
   // FLEx project state
   const [flexProjects, setFlexProjects] = useState<FlexProjectOption[]>([]);
@@ -312,6 +344,67 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   // never need a second bridge round trip just to render WS options.
   const [flexProjectsByName, setFlexProjectsByName] = useState<Map<string, FlexProjectInfo>>(() => new Map());
   const [selectedFlexProject, setSelectedFlexProject] = useState<FlexProjectOption | undefined>();
+
+  // WS persistence is keyed per (PT project, FLEx project) pair — the WS list
+  // belongs to the FLEx project, so a saved code is only meaningful while
+  // that pairing is selected. When the user switches FLEx project, the
+  // useWebViewState key changes and we read whatever WS was last successfully
+  // exported with that *new* pair (or "" if none).
+  const wsPersistenceKey = `writingSystemCode-${projectId || "default"}-${selectedFlexProject?.name || ""}`;
+  const [savedWritingSystemCode, setSavedWritingSystemCode] = useWebViewState<string>(
+    wsPersistenceKey,
+    ""
+  );
+
+  // Persisted filter toggles (read on key change, written only on export success)
+  const [savedIncludeFootnotes, setSavedIncludeFootnotes] = useWebViewState<boolean>(
+    `includeFootnotes-${projectId || "default"}`,
+    false
+  );
+  const [savedIncludeCrossRefs, setSavedIncludeCrossRefs] = useWebViewState<boolean>(
+    `includeCrossRefs-${projectId || "default"}`,
+    false
+  );
+  const [savedIncludeIntro, setSavedIncludeIntro] = useWebViewState<boolean>(
+    `includeIntro-${projectId || "default"}`,
+    false
+  );
+  const [savedIncludeRemarks, setSavedIncludeRemarks] = useWebViewState<boolean>(
+    `includeRemarks-${projectId || "default"}`,
+    false
+  );
+  const [savedIncludeFigures, setSavedIncludeFigures] = useWebViewState<boolean>(
+    `includeFigures-${projectId || "default"}`,
+    true
+  );
+  const [savedIncludeBookHeaders, setSavedIncludeBookHeaders] = useWebViewState<boolean>(
+    `includeBookHeaders-${projectId || "default"}`,
+    false
+  );
+
+  // Coerce a useWebViewState boolean read (which may be a PlatformError) to a real boolean.
+  const coerceBool = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
+
+  // Local UI state for filter toggles, seeded from the persisted slots.
+  const [includeFootnotes, setIncludeFootnotes] = useState<boolean>(coerceBool(savedIncludeFootnotes, false));
+  const [includeCrossRefs, setIncludeCrossRefs] = useState<boolean>(coerceBool(savedIncludeCrossRefs, false));
+  const [includeIntro, setIncludeIntro] = useState<boolean>(coerceBool(savedIncludeIntro, false));
+  const [includeRemarks, setIncludeRemarks] = useState<boolean>(coerceBool(savedIncludeRemarks, false));
+  const [includeFigures, setIncludeFigures] = useState<boolean>(coerceBool(savedIncludeFigures, true));
+  const [includeBookHeaders, setIncludeBookHeaders] = useState<boolean>(coerceBool(savedIncludeBookHeaders, false));
+
+  // Re-seed local UI state from persisted slots when the underlying key changes
+  // (i.e. PT project switched via nav event, or the saved value mutated via
+  // an export-success write or auto-heal).
+  useEffect(() => { setIncludeFootnotes(coerceBool(savedIncludeFootnotes, false)); }, [savedIncludeFootnotes]);
+  useEffect(() => { setIncludeCrossRefs(coerceBool(savedIncludeCrossRefs, false)); }, [savedIncludeCrossRefs]);
+  useEffect(() => { setIncludeIntro(coerceBool(savedIncludeIntro, false)); }, [savedIncludeIntro]);
+  useEffect(() => { setIncludeRemarks(coerceBool(savedIncludeRemarks, false)); }, [savedIncludeRemarks]);
+  useEffect(() => { setIncludeFigures(coerceBool(savedIncludeFigures, true)); }, [savedIncludeFigures]);
+  useEffect(() => { setIncludeBookHeaders(coerceBool(savedIncludeBookHeaders, false)); }, [savedIncludeBookHeaders]);
+
+  // Overwrite setting - session-scoped (intentionally not persisted per project — destructive default is unsafe to remember)
+  const [overwriteEnabled, setOverwriteEnabled] = useState<boolean>(false);
   const [flexProjectDetails, setFlexProjectDetails] = useState<FlexProjectDetails | undefined>();
   const [isLoadingFlexProjects, setIsLoadingFlexProjects] = useState(false);
   const [flexLoadError, setFlexLoadError] = useState<string | undefined>();
@@ -667,6 +760,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     };
   }, [includeResources]);
 
+  // Tracks which projectId the current `availableBookIds` was fetched for.
+  // Without this, the "navigate to first available book" fallback below can
+  // fire against the *previous* project's book list during the brief window
+  // between projectId changing and the new project's books arriving — and
+  // wipe a freshly-applied nav target. Issue #14 race fix.
+  const [availableBookIdsForProjectId, setAvailableBookIdsForProjectId] = useState<string | undefined>();
+
   // Fetch available books when project changes
   useEffect(() => {
     let cancelled = false;
@@ -674,6 +774,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     const fetchAvailableBooks = async () => {
       if (!projectId) {
         setAvailableBookIds([]);
+        setAvailableBookIdsForProjectId(undefined);
         return;
       }
 
@@ -691,14 +792,17 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             return ids;
           }, []);
           setAvailableBookIds(bookIds);
+          setAvailableBookIdsForProjectId(projectId);
         } else if (!cancelled && !booksPresent) {
           // No books present data - clear the filter
           setAvailableBookIds([]);
+          setAvailableBookIdsForProjectId(projectId);
         }
       } catch (err) {
         console.error("Failed to fetch available books:", err);
         if (!cancelled) {
           setAvailableBookIds([]);
+          setAvailableBookIdsForProjectId(projectId);
         }
       }
     };
@@ -710,14 +814,39 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     };
   }, [projectId]);
 
-  // Navigate to first available book if current book is not in the project
+  // Apply a deferred nav target once the new project's books have loaded.
+  // Pending targets only exist when a nav event arrived for a *different*
+  // projectId than was current at the time. Splitting "switch project" and
+  // "apply scrRef" into two phases lets the fallback effect below see a
+  // consistent (projectId, availableBookIds, scrRef) tuple.
   useEffect(() => {
+    if (availableBookIdsForProjectId !== projectId) return;
+    const target = pendingNavRef.current;
+    if (!target) return;
+    pendingNavRef.current = undefined;
+
+    if (availableBookIds.length === 0 || availableBookIds.includes(target.book)) {
+      setScrRef({ ...target, verseNum: 1 });
+      setEndChapter(target.chapterNum || 1);
+    } else {
+      // Target book isn't in the new project — fall through to the
+      // first-available fallback below.
+    }
+  }, [availableBookIdsForProjectId, projectId, availableBookIds]);
+
+  // Navigate to first available book if current book is not in the project.
+  // Gated on availableBookIds being for the *current* projectId, otherwise
+  // a stale book list from the previous project would clobber a fresh nav
+  // target. Also skipped while a pending nav target is queued.
+  useEffect(() => {
+    if (availableBookIdsForProjectId !== projectId) return;
+    if (pendingNavRef.current) return;
     if (availableBookIds.length > 0 && !availableBookIds.includes(scrRef.book)) {
       const firstBook = availableBookIds[0];
       setScrRef({ book: firstBook, chapterNum: 1, verseNum: 1 });
       setEndChapter(1);
     }
-  }, [availableBookIds, scrRef.book]);
+  }, [availableBookIds, availableBookIdsForProjectId, projectId, scrRef.book]);
 
   // Callback to get active book IDs for BookChapterControl filtering
   const getActiveBookIds = useCallback(() => {
@@ -1252,23 +1381,6 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     ];
     setExportSteps(steps);
 
-    // Save settings at start of export (so they persist even if export fails)
-    try {
-      if (selectedFlexProject && selectedWritingSystem) {
-        console.log('[Persistence] Export starting - saving settings for Paratext project:', projectId);
-        setSavedFlexProjectName(selectedFlexProject.name);
-        setSavedWritingSystemCode(selectedWritingSystem.code);
-        setIncludeFootnotes(includeFootnotes);
-        setIncludeCrossRefs(includeCrossRefs);
-        setIncludeIntro(includeIntro);
-        setIncludeRemarks(includeRemarks);
-        setIncludeFigures(includeFigures);
-        setIncludeBookHeaders(includeBookHeaders);
-      }
-    } catch (saveErr) {
-      console.warn('[Persistence] Failed to save settings at export start:', saveErr);
-    }
-
     try {
       // Check if FLEx is running and if project sharing is enabled
       const flexStatus = await papi.commands.sendCommand(
@@ -1324,6 +1436,26 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       if (result.success) {
         updateStep('export', 'done');
         updateStep('verify', 'active');
+
+        // Persist user's working choices for this PT project. WS is keyed by
+        // (PT, FLEx) pair via wsPersistenceKey, so it lands in the slot for
+        // the FLEx project we just exported to. Filters are per PT project.
+        try {
+          if (selectedFlexProject) {
+            setSavedFlexProjectName(selectedFlexProject.name);
+          }
+          if (selectedWritingSystem) {
+            setSavedWritingSystemCode(selectedWritingSystem.code);
+          }
+          setSavedIncludeFootnotes(includeFootnotes);
+          setSavedIncludeCrossRefs(includeCrossRefs);
+          setSavedIncludeIntro(includeIntro);
+          setSavedIncludeRemarks(includeRemarks);
+          setSavedIncludeFigures(includeFigures);
+          setSavedIncludeBookHeaders(includeBookHeaders);
+        } catch (saveErr) {
+          console.warn('[Persistence] Failed to save settings on export success:', saveErr);
+        }
 
         const exportedCount = result.paragraphCount || 0;
         const isSingular = exportedCount === 1;
@@ -1422,7 +1554,34 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       // Clear progress steps after a delay so user can see final state
       setTimeout(() => setExportSteps([]), 5000);
     }
-  }, [selectedFlexProject, textName, chaptersUSJ, overwriteEnabled, showOverwriteConfirm, selectedWritingSystem, scrRef.chapterNum, scrRef.book, filterUsjContent, localizedStrings, generateUniqueName, updateStep]);
+  }, [
+    selectedFlexProject,
+    textName,
+    chaptersUSJ,
+    overwriteEnabled,
+    showOverwriteConfirm,
+    selectedWritingSystem,
+    scrRef.chapterNum,
+    scrRef.book,
+    filterUsjContent,
+    localizedStrings,
+    generateUniqueName,
+    updateStep,
+    includeFootnotes,
+    includeCrossRefs,
+    includeIntro,
+    includeRemarks,
+    includeFigures,
+    includeBookHeaders,
+    setSavedFlexProjectName,
+    setSavedWritingSystemCode,
+    setSavedIncludeFootnotes,
+    setSavedIncludeCrossRefs,
+    setSavedIncludeIntro,
+    setSavedIncludeRemarks,
+    setSavedIncludeFigures,
+    setSavedIncludeBookHeaders,
+  ]);
 
   // Cancel overwrite confirmation
   const handleCancelOverwrite = useCallback(() => {

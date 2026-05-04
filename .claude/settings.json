@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(npm run deploy:*)",
-      "Read(//d/Github/_Projects/_LEX/flexlibs/**)"
+      "Read(//d/Github/_Projects/_LEX/flexlibs/**)",
+      "Read(//d/Github/_Projects/_PTX/paranextPlugin/paranext-core/lib/papi-dts/**)",
+      "Read(//d/Github/_Projects/_PTX/paranextPlugin/paranext-core/**)"
     ]
   }
 }
