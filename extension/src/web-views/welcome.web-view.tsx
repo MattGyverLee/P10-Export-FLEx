@@ -128,7 +128,7 @@ function StatusStrip({ variant, message, steps, trailing }: StatusStripProps) {
   const style = hasMessage ? STATUS_VARIANT_STYLES[variant] : undefined;
 
   const containerClasses = hasMessage && style
-    ? `tw-min-h-[2.75rem] tw-w-full tw-rounded-md tw-border tw-p-3 tw-flex tw-items-center tw-gap-3 ${style.container}`
+    ? `tw-min-h-[2.75rem] tw-w-full tw-rounded-md tw-border tw-p-3 tw-flex tw-items-center tw-gap-4 ${style.container}`
     : "tw-min-h-[2.75rem] tw-w-full tw-flex tw-items-center tw-justify-end";
 
   return (
@@ -140,7 +140,9 @@ function StatusStrip({ variant, message, steps, trailing }: StatusStripProps) {
     >
       {hasMessage && style && (
         <>
-          <style.Icon className={`tw-h-5 tw-w-5 tw-shrink-0 ${style.spinning ? "tw-animate-spin" : ""}`} />
+          <span className="tw-flex tw-h-5 tw-w-5 tw-shrink-0 tw-items-center tw-justify-center">
+            <style.Icon className={`tw-h-4 tw-w-4 ${style.spinning ? "tw-animate-spin" : ""}`} />
+          </span>
           <div className="tw-flex-1 tw-min-w-0">
             {message && (
               <p className="tw-text-sm tw-whitespace-normal tw-break-words tw-leading-snug">
@@ -512,6 +514,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   const [flexProjectDetails, setFlexProjectDetails] = useState<FlexProjectDetails | undefined>();
   const [isLoadingFlexProjects, setIsLoadingFlexProjects] = useState(false);
   const [flexLoadError, setFlexLoadError] = useState<string | undefined>();
+  // Soft-failure states for the four async fetches that previously failed
+  // silently (chapters preview empty, dropdowns empty, etc. with no
+  // explanation). Surfaced as actionable warnings in the StatusStrip.
+  const [flexDetailsError, setFlexDetailsError] = useState<string | undefined>();
+  const [paratextProjectsError, setParatextProjectsError] = useState<string | undefined>();
+  const [booksError, setBooksError] = useState<string | undefined>();
+  const [chaptersError, setChaptersError] = useState<{ book: string; chapter: number } | undefined>();
 
   // Writing system state
   const [selectedWritingSystem, setSelectedWritingSystem] = useState<WritingSystemOption | undefined>();
@@ -679,9 +688,11 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       if (!selectedFlexProject) {
         setFlexProjectDetails(undefined);
         setSelectedWritingSystem(undefined);
+        setFlexDetailsError(undefined);
         return;
       }
 
+      setFlexDetailsError(undefined);
       try {
         let details: FlexProjectDetails | undefined =
           flexProjectsByName.get(selectedFlexProject.name);
@@ -735,6 +746,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         }
       } catch (err) {
         console.error("Failed to fetch FLEx project details:", err);
+        if (!cancelled) {
+          setFlexDetailsError(selectedFlexProject.name);
+        }
       }
     };
 
@@ -819,6 +833,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     let cancelled = false;
 
     const fetchProjects = async () => {
+      setParatextProjectsError(undefined);
       try {
         const options: ProjectOption[] = [];
         // Get all projects that support USJ_Chapter
@@ -854,6 +869,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         }
       } catch (err) {
         console.error("Failed to fetch projects:", err);
+        if (!cancelled) {
+          setParatextProjectsError(err instanceof Error ? err.message : String(err));
+        }
       }
     };
 
@@ -879,9 +897,11 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       if (!projectId) {
         setAvailableBookIds([]);
         setAvailableBookIdsForProjectId(undefined);
+        setBooksError(undefined);
         return;
       }
 
+      setBooksError(undefined);
       try {
         const pdp = await papi.projectDataProviders.get("platform.base", projectId);
         const booksPresent = await pdp.getSetting("platformScripture.booksPresent") as string;
@@ -907,6 +927,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         if (!cancelled) {
           setAvailableBookIds([]);
           setAvailableBookIdsForProjectId(projectId);
+          setBooksError(selectedProject?.label || projectId);
         }
       }
     };
@@ -1058,10 +1079,12 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     const fetchChapters = async () => {
       if (!projectId) {
         setChaptersUSJ([]);
+        setChaptersError(undefined);
         return;
       }
 
       setIsLoading(true);
+      setChaptersError(undefined);
       try {
         const pdp = await papi.projectDataProviders.get(
           "platformScripture.USJ_Chapter",
@@ -1088,6 +1111,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         console.error("Failed to fetch chapters:", err);
         if (!cancelled) {
           setChaptersUSJ([]);
+          setChaptersError({ book: scrRef.book, chapter: scrRef.chapterNum });
         }
       } finally {
         if (!cancelled) {
@@ -1814,6 +1838,37 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         : (localizedStrings["%flexExport_flexLoadError%"] || "").replace("{error}", flexLoadError);
       return { variant: "error", message };
     }
+    // Soft-failure surfaces, ordered upstream-first: fix the higher-level
+    // problem first and the downstream warnings clear themselves.
+    if (flexDetailsError) {
+      return {
+        variant: "warning",
+        message: (localizedStrings["%flexExport_flexDetailsError%"] || "")
+          .replace("{name}", flexDetailsError),
+      };
+    }
+    if (paratextProjectsError) {
+      return {
+        variant: "warning",
+        message: (localizedStrings["%flexExport_paratextProjectsError%"] || "")
+          .replace("{error}", paratextProjectsError),
+      };
+    }
+    if (booksError) {
+      return {
+        variant: "warning",
+        message: (localizedStrings["%flexExport_booksError%"] || "")
+          .replace("{projectName}", booksError),
+      };
+    }
+    if (chaptersError) {
+      return {
+        variant: "warning",
+        message: (localizedStrings["%flexExport_chaptersError%"] || "")
+          .replace("{book}", chaptersError.book)
+          .replace("{chapter}", String(chaptersError.chapter)),
+      };
+    }
     if (notExportableReason === "resource") {
       return {
         variant: "info",
@@ -1821,7 +1876,18 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       };
     }
     return {};
-  }, [exportStatus, isExporting, exportSteps, flexLoadError, notExportableReason, localizedStrings]);
+  }, [
+    exportStatus,
+    isExporting,
+    exportSteps,
+    flexLoadError,
+    flexDetailsError,
+    paratextProjectsError,
+    booksError,
+    chaptersError,
+    notExportableReason,
+    localizedStrings,
+  ]);
 
   return (
     <div id="flex-export-container" className="tw-p-4 tw-min-h-screen tw-bg-background tw-text-foreground tw-font-sans" dir={isUiRtl ? "rtl" : "ltr"}>
