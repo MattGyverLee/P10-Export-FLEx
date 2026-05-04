@@ -137,9 +137,6 @@ FlexTextBridge.exe --check-text --project "MyProject" --title "Mark 01"
 # Check if FLEx is running with project sharing enabled
 FlexTextBridge.exe --check-flex-status --project "MyProject"
 
-# Get safe navigation target (for redirecting FLEx away from text being overwritten)
-FlexTextBridge.exe --get-safe-target --project "MyProject" --title "Mark 01"
-
 # Verify text exists and is accessible by GUID
 FlexTextBridge.exe --verify-text --project "MyProject" --guid "12345678-1234-1234-1234-123456789abc"
 ```
@@ -228,9 +225,9 @@ This eliminates the need for regex parsing - we can walk the USJ tree and tag ea
 
 ## Data Flow
 
-### Safe Navigation Workflow (Overwrite with FLEx Open)
+### Overwrite Workflow (FLEx Open)
 
-When FLEx is running with project sharing enabled and the user wants to overwrite an existing text:
+When FLEx is running and the user wants to overwrite an existing text:
 
 1. **Check FLEx Status** (`--check-flex-status`)
    - Detect if FLEx is running
@@ -239,30 +236,12 @@ When FLEx is running with project sharing enabled and the user wants to overwrit
 2. **If FLEx is open WITHOUT sharing** → Error
    - User must close FLEx or enable Project Sharing (Edit > Project Properties > Sharing)
 
-3. **If FLEx is open WITH sharing** → Safe Redirect Workflow:
-   a. Get safe navigation target (`--get-safe-target`)
-      - Finds another text in the project (not the one being overwritten)
-      - Returns GUID and tool name (e.g., `interlinearEdit`)
+3. **If FLEx is open WITH sharing** → Overwrite:
+   a. Delete existing text and create new one
 
-   b. Navigate FLEx away using deep link:
-      ```
-      silfw://localhost/link?database%3d{project}%26tool%3d{tool}%26guid%3d{guid}%26tag%3d
-      ```
-
-   c. Wait for navigation to complete (2 seconds)
-
-   d. Delete existing text and create new one
-
-   e. Verify new text is accessible (`--verify-text`)
+   b. Verify new text is accessible (`--verify-text`)
       - Retries up to 5 times with 500ms delay
-      - Ensures text is fully committed before navigation
-
-   f. Navigate back to Texts tool, then to specific text:
-      ```
-      silfw://localhost/link?database%3d{project}%26tool%3dinterlinearEdit%26guid%3d{newGuid}%26tag%3d
-      ```
-
-This workflow prevents "deleted object" errors that occur when FLEx tries to display a text that was just replaced.
+      - Ensures text is fully committed
 
 ### Scripture Retrieval (Extension)
 
@@ -325,9 +304,7 @@ The extension registers the following commands via PAPI:
 | `flexExport.preloadFlexProjectInfo` | Background cache warming for multiple projects |
 | `flexExport.checkTextName` | Checks if text exists, suggests unique alternative |
 | `flexExport.checkFlexStatus` | Returns `{ isRunning, sharingEnabled }` |
-| `flexExport.getSafeNavigationTarget` | Gets GUID to navigate away from target text |
 | `flexExport.verifyText` | Verifies text is accessible by GUID |
-| `flexExport.navigateFlex` | Opens deep link URL to navigate FLEx |
 | `flexExport.exportToFlex` | Creates text in FLEx project from USJ data |
 
 ## Configuration & Settings
@@ -419,7 +396,6 @@ To avoid slow LCM cache loads when switching between FLEx projects, project deta
 - [x] `--vernacular-ws` option for selecting non-default writing system
 - [x] `--check-text` command to check if text exists and suggest unique name
 - [x] `--check-flex-status` to check if FLEx is running with sharing enabled
-- [x] `--get-safe-target` to find safe navigation target for overwrite workflow
 - [x] `--verify-text` to verify text accessibility by GUID after creation
 
 **Success Criteria:** Can run from command line to create a FLEx text - ACHIEVED
@@ -439,10 +415,7 @@ To avoid slow LCM cache loads when switching between FLEx projects, project deta
 - [x] Overwrite toggle with confirmation dialog
 - [x] Success/error notifications with detailed messages
 - [x] Settings persistence per Paratext project (saved after successful export)
-- [x] "Open in FLEx" button after successful export
-- [x] Deep link navigation to exported text in FLEx interlinear view
-- [x] Safe redirect workflow when FLEx is open with project sharing enabled
-- [x] Text verification before navigation to prevent "deleted object" errors
+- [x] Text verification after creation to confirm overwrite committed
 - [x] Project info caching (5-minute TTL) to avoid slow LCM cache loads
 - [x] Background project preloading when FLEx projects list is fetched
 
@@ -450,7 +423,6 @@ To avoid slow LCM cache loads when switching between FLEx projects, project deta
 
 ### Post-MVP Features (COMPLETED)
 - [x] Overwrite confirmation dialog
-- [x] Navigate FLEx to exported text (when FLEx is open with sharing)
 - [x] Persist content filter settings between sessions (per Paratext project)
 - [x] Writing system selection for projects with multiple vernacular WS
 - [x] Rename suggestion when text already exists
@@ -536,7 +508,6 @@ To avoid slow LCM cache loads when switching between FLEx projects, project deta
 | `bridge/FlexTextBridge/Commands/CreateTextCommand.cs` | Text creation from USJ |
 | `bridge/FlexTextBridge/Commands/CheckTextCommand.cs` | --check-text implementation |
 | `bridge/FlexTextBridge/Commands/CheckFlexStatusCommand.cs` | --check-flex-status implementation |
-| `bridge/FlexTextBridge/Commands/SafeTargetCommand.cs` | --get-safe-target implementation |
 | `bridge/FlexTextBridge/Commands/VerifyTextCommand.cs` | --verify-text implementation |
 | `bridge/FlexTextBridge/Services/FlexProjectService.cs` | FLEx project discovery and opening |
 | `bridge/FlexTextBridge/Services/TextCreationService.cs` | LibLCM text/paragraph creation |
