@@ -1,13 +1,10 @@
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using SIL.LCModel;
 
 namespace FlexTextBridge.Services
 {
     /// <summary>
-    /// Service for detecting FLEx process and finding safe navigation targets.
+    /// Service for detecting FLEx process and project sharing state.
     /// </summary>
     public class ProcessDetectionService
     {
@@ -44,17 +41,6 @@ namespace FlexTextBridge.Services
                 isRunning: IsFieldWorksRunning(),
                 sharingEnabled: IsProjectSharingEnabled(projectFolder)
             );
-        }
-
-        /// <summary>
-        /// Find a safe navigation target to redirect FLEx away from the text being overwritten.
-        /// Always navigates to the corpus statistics tool, which is lightweight and moves FLEx away from the Texts area.
-        /// </summary>
-        public (Guid? textGuid, string tool) FindSafeNavigationTarget(LcmCache cache, string targetTextTitle)
-        {
-            // Navigate to corpus statistics tool - lightweight and reliably moves FLEx away from texts
-            // We don't need a specific GUID, just the tool name
-            return (null, "corpusStatistics");
         }
     }
 }

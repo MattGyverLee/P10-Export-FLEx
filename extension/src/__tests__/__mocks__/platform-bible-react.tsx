@@ -203,6 +203,13 @@ export const BookChapterControl = ({
 
   return (
     <div data-testid="book-chapter-control">
+      {/* Mirrors the real component's trigger button structure so that
+          wrappers (e.g. ChapterOnlyBookControl) can locate the label span. */}
+      <button aria-label="book-chapter-trigger" type="button">
+        <span className="tw-truncate">
+          {`${scrRef.book} ${scrRef.chapterNum}:${scrRef.verseNum}`}
+        </span>
+      </button>
       <select
         data-testid="book-selector"
         value={scrRef.book}

@@ -2,7 +2,8 @@ import { WebViewProps } from "@papi/core";
 import papi from "@papi/frontend";
 import { useLocalizedStrings, useProjectSetting, useSetting } from "@papi/frontend/react";
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { BookChapterControl, Button, Checkbox, ComboBox, Input, Label, Switch } from "platform-bible-react";
+import { Button, Checkbox, ComboBox, Input, Label, Switch } from "platform-bible-react";
+import { ChapterOnlyBookControl } from "./components/ChapterOnlyBookControl";
 import { isPlatformError, getChaptersForBook } from "platform-bible-utils";
 import { Canon, SerializedVerseRef } from "@sillsdev/scripture";
 
@@ -336,9 +337,6 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     setExportSteps(prev => prev.map(s => s.id === stepId ? { ...s, status } : s));
   }, []);
 
-  // Last exported text info for "Open in FLEx" button
-  const [lastExportedText, setLastExportedText] = useState<{ projectName: string; textGuid: string } | undefined>();
-
   // Counter incremented after each successful export to re-trigger the "Will be created as" check
   const [exportCount, setExportCount] = useState(0);
 
@@ -536,27 +534,6 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             });
           } else {
             setSelectedWritingSystem(undefined);
-          }
-
-          // Navigate FLEx away from Texts if running (fire-and-forget)
-          // This ensures FLEx is on the Lexicon well before the user clicks Export,
-          // avoiding stale-object errors when overwriting texts.
-          if (!cancelled) {
-            try {
-              const flexStatus = await papi.commands.sendCommand(
-                "flexExport.checkFlexStatus",
-                selectedFlexProject.name
-              ) as { isRunning: boolean; sharingEnabled: boolean };
-
-              if (flexStatus.isRunning && flexStatus.sharingEnabled) {
-                const lexiconLink = `silfw://localhost/link?database%3d${encodeURIComponent(selectedFlexProject.name)}%26tool%3dlexiconEdit%26tag%3d`;
-                console.log('[Navigate] FLEx is running with sharing - navigating to Lexicon');
-                papi.commands.sendCommand('flexExport.navigateFlex', lexiconLink)
-                  .catch((navErr: unknown) => console.warn('[Navigate] Lexicon navigation failed:', navErr));
-              }
-            } catch (navCheckErr) {
-              console.warn('[Navigate] Could not check FLEx status for early navigation:', navCheckErr);
-            }
           }
         }
       } catch (err) {
@@ -865,28 +842,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           }
         }
 
-        // Ensure the loaded range starts with a \id book node. Paratext only
-        // stores it in chapter 1's USJ, so a translator working out of order
-        // (e.g. passion story before chapter 1) would otherwise see a preview
-        // and an export with no \id at all. Synthesise one from scrRef.book
-        // so preview and export agree.
-        if (chapters.length > 0) {
-          const firstContent = chapters[0].content as (UsjNode | string)[] | undefined;
-          const hasBookNode = !!firstContent?.some(
-            (item) => typeof item !== "string" && (item as UsjNode).type === "book"
-          );
-          if (!hasBookNode) {
-            const synthesisedBook: UsjNode = {
-              type: "book",
-              marker: "id",
-              code: scrRef.book,
-            };
-            chapters[0] = {
-              ...chapters[0],
-              content: [synthesisedBook, ...(firstContent ?? [])],
-            };
-          }
-        }
+        // \id is emitted only when the export starts at chapter 1 — for any
+        // other starting chapter the book node simply isn't present in
+        // Paratext's USJ, and we deliberately don't synthesise one. Issue #15.
 
         if (!cancelled) {
           setChaptersUSJ(chapters);
@@ -954,7 +912,8 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           const node = item as UsjNode;
 
           if (node.type === "book") {
-            // \id BOOK_CODE — always rendered, never filtered. Issue #15.
+            // \id BOOK_CODE — only present when starting at chapter 1 (Paratext
+            // stores the book node only in chapter 1's USJ). Issue #15.
             const code = node.code ?? "";
             return `\\id ${code}\n`;
           }
@@ -1037,8 +996,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         const node = item as UsjNode;
 
         if (node.type === "book") {
-          // Render \id BOOK_CODE as a small monospace label so the user can see
-          // it in the preview. Always shown — not gated on any toggle. Issue #15.
+          // Render \id BOOK_CODE as a small monospace label. Only present when
+          // the export starts at chapter 1 (Paratext stores the book node only
+          // in chapter 1's USJ). Issue #15.
           return (
             <div
               key={itemKey}
@@ -1207,9 +1167,10 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           if (typeof item === "string") return item;
           const node = item as UsjNode;
 
-          // The book identification node (\id) is always preserved — USFM
-          // requires it and the bridge tags it as analysis (English) so it
-          // never gets translated. Issue #15.
+          // The book identification node (\id) passes through the filter
+          // unchanged when present. It only appears when the export starts at
+          // chapter 1; for later starting chapters it isn't in Paratext's USJ
+          // and we don't synthesise one. Issue #15.
 
           if (node.type === "para" && node.marker) {
             // Drop \h and \toc* only when the user has unchecked Book Headers.
@@ -1282,7 +1243,6 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     setShowRenameConfirm(false);
     setIsExporting(true);
     setExportStatus(undefined);
-    setLastExportedText(undefined);
 
     // Initialize progress steps
     const steps: ExportStep[] = [
@@ -1336,9 +1296,9 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       // The export's first chapter (idx 0) is treated as the "first chapter" for
       // chapter-1-only filters (book headers, intro). The user may be exporting
       // a range starting at chapter 5 — in that case the USJ for chapter 5 has
-      // no book/header content of its own, so those filters are no-ops. The
-      // synthetic \id book node is injected at fetch time, so chaptersUSJ[0]
-      // already has it whether or not chapter 1 is in the range.
+      // no book/header content of its own, so those filters are no-ops. \id is
+      // only present when the range starts at chapter 1 (Paratext stores it
+      // only in chapter 1's USJ; we don't synthesise one). Issue #15.
       const filteredChapters = chaptersUSJ.map((chapter, idx) => {
         const isFirstChapter = idx === 0;
         if (chapter.content) {
@@ -1378,13 +1338,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         setExportStatus({ success: true, message: successMessage });
         setExportCount(prev => prev + 1);
 
-        // Store text GUID for "Open in FLEx" button
         if (result.textGuid) {
-          setLastExportedText({
-            projectName: selectedFlexProject.name,
-            textGuid: result.textGuid
-          });
-
           // Verify text is accessible (confirms export fully committed)
           if (flexStatus.isRunning && flexStatus.sharingEnabled) {
             console.log('Verifying text is accessible...');
@@ -1486,20 +1440,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     setSuggestedName("");
   }, []);
 
-  // Open the last exported text in FLEx using deep link
-  const handleOpenInFlex = useCallback(async () => {
-    if (!lastExportedText) return;
-
-    const deepLink = `silfw://localhost/link?database%3d${encodeURIComponent(lastExportedText.projectName)}%26tool%3dinterlinearEdit%26guid%3d${lastExportedText.textGuid}%26tag%3d`;
-    await papi.commands.sendCommand('platform.openExternal', deepLink);
-  }, [lastExportedText]);
-
   // Format USJ as JSON for debug view (with filtering applied)
   const usjJson = useMemo(() => {
     if (!chaptersUSJ.length) return "";
 
-    // Mirror the export pipeline so the preview shows what the bridge will see,
-    // including the synthesised \id line for late-start exports. Issue #15.
+    // Mirror the export pipeline so the preview shows what the bridge will see.
+    // \id is only present when the export starts at chapter 1; we don't
+    // synthesise one for later starting chapters. Issue #15.
     const filteredChapters = chaptersUSJ.map((chapter, idx) => {
       const isFirstChapter = idx === 0;
       if (chapter.content) {
@@ -1511,26 +1458,8 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       return chapter;
     });
 
-    if (filteredChapters.length > 0) {
-      const firstContent = filteredChapters[0].content as (UsjNode | string)[] | undefined;
-      const hasBookNode = !!firstContent?.some(
-        (item) => typeof item !== "string" && (item as UsjNode).type === "book"
-      );
-      if (!hasBookNode) {
-        const synthesisedBook: UsjNode = {
-          type: "book",
-          marker: "id",
-          code: scrRef.book,
-        };
-        filteredChapters[0] = {
-          ...filteredChapters[0],
-          content: [synthesisedBook, ...(firstContent ?? [])],
-        };
-      }
-    }
-
     return JSON.stringify(filteredChapters, null, 2);
-  }, [chaptersUSJ, filterUsjContent, scrRef.book]);
+  }, [chaptersUSJ, filterUsjContent]);
 
   // Render USJ JSON with RTL-aware string values
   const renderUsjWithDirection = useMemo(() => {
@@ -1586,6 +1515,17 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
   return (
     <div id="flex-export-container" className="tw-p-4 tw-min-h-screen tw-bg-background tw-text-foreground tw-font-sans" dir={isUiRtl ? "rtl" : "ltr"}>
+      {/* Local override for ComboBox dropdown items in platform-bible-react:
+          - Pin the leading check icon to its intrinsic size (upstream Check
+            in combo-box.component.tsx is missing tw-shrink-0).
+          - Top-align icon and label so the icon doesn't drift to the vertical
+            middle when a long option label wraps (upstream CommandItem in
+            command.tsx uses tw-items-center).
+          Remove once both upstream fixes land. */}
+      <style>{`
+        [cmdk-item] { align-items: flex-start !important; }
+        [cmdk-item] > svg { flex: none !important; }
+      `}</style>
       <div id="flex-export-content" className="tw-mx-auto">
         {/* Settings Row - Three inline boxes that wrap on narrow screens */}
         <div id="settings-row" className="tw-flex tw-flex-wrap tw-items-start tw-gap-4 tw-mb-8">
@@ -1599,7 +1539,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             <div id="paratext-settings-content" className="tw-px-4 tw-py-3 tw-space-y-3">
               {/* Project Selection - Ctrl+click to include resources (secret mode) */}
               <div id="paratext-project-row" className="tw-flex tw-items-center tw-gap-3">
-                <Label id="paratext-project-label" htmlFor="paratext-project-selector" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap">
+                <Label id="paratext-project-label" htmlFor="paratext-project-selector" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap tw-me-2">
                   {localizedStrings["%flexExport_project%"]}
                 </Label>
                 <div id="paratext-project-selector-wrapper" onMouseDown={handleProjectSelectorClick}>
@@ -1623,12 +1563,13 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                   {localizedStrings["%flexExport_selectBookChapter%"]}
                 </Label>
                 <div id="scripture-reference-controls" className="tw-flex tw-items-center tw-gap-3 tw-flex-wrap">
-                  <BookChapterControl
+                  <ChapterOnlyBookControl
                     scrRef={scrRef}
                     handleSubmit={handleStartRefChange}
                     getActiveBookIds={availableBookIds.length > 0 ? getActiveBookIds : undefined}
+                    className="tw-h-9 tw-px-3"
                   />
-                  <Label id="end-chapter-label" htmlFor="end-chapter-selector" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_toChapter%"]} </Label>
+                  <Label id="end-chapter-label" htmlFor="end-chapter-selector" className="tw-text-sm tw-text-foreground tw-mx-2">{localizedStrings["%flexExport_toChapter%"]}</Label>
                   <ComboBox<number>
                     id="end-chapter-selector"
                     options={endChapterOptions}
@@ -1660,7 +1601,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                 />
                 <span
                   id="include-book-headers-label"
-                  className={`tw-text-sm ${scrRef.chapterNum !== 1 ? "tw-text-muted-foreground" : "tw-text-foreground"}`}
+                  className={`tw-text-sm tw-ms-2 ${scrRef.chapterNum !== 1 ? "tw-text-muted-foreground" : "tw-text-foreground"}`}
                 >
                   {localizedStrings["%flexExport_bookHeaders%"]}
                 </span>
@@ -1672,7 +1613,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                   onCheckedChange={(checked: boolean | "indeterminate") => setIncludeIntro(checked === true)}
                   disabled={scrRef.chapterNum !== 1}
                 />
-                <span id="include-intro-label" className={`tw-text-sm ${scrRef.chapterNum !== 1 ? "tw-text-muted-foreground" : "tw-text-foreground"}`}>
+                <span id="include-intro-label" className={`tw-text-sm tw-ms-2 ${scrRef.chapterNum !== 1 ? "tw-text-muted-foreground" : "tw-text-foreground"}`}>
                   {localizedStrings["%flexExport_introduction%"]}
                 </span>
               </Label>
@@ -1682,7 +1623,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                   checked={includeFigures}
                   onCheckedChange={(checked: boolean | "indeterminate") => setIncludeFigures(checked === true)}
                 />
-                <span id="include-figures-label" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_figures%"]}</span>
+                <span id="include-figures-label" className="tw-text-sm tw-ms-2 tw-text-foreground">{localizedStrings["%flexExport_figures%"]}</span>
               </Label>
               <Label id="include-crossrefs-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
                 <Checkbox
@@ -1690,7 +1631,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                   checked={includeCrossRefs}
                   onCheckedChange={(checked: boolean | "indeterminate") => setIncludeCrossRefs(checked === true)}
                 />
-                <span id="include-crossrefs-label" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_crossReferences%"]}</span>
+                <span id="include-crossrefs-label" className="tw-text-sm tw-ms-2 tw-text-foreground">{localizedStrings["%flexExport_crossReferences%"]}</span>
               </Label>
               <Label id="include-remarks-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
                 <Checkbox
@@ -1698,7 +1639,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                   checked={includeRemarks}
                   onCheckedChange={(checked: boolean | "indeterminate") => setIncludeRemarks(checked === true)}
                 />
-                <span id="include-remarks-label" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_remarks%"]}</span>
+                <span id="include-remarks-label" className="tw-text-sm tw-ms-2 tw-text-foreground">{localizedStrings["%flexExport_remarks%"]}</span>
               </Label>
               <Label id="include-footnotes-row" className="tw-flex tw-items-center tw-gap-2 tw-cursor-pointer">
                 <Checkbox
@@ -1706,7 +1647,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                   checked={includeFootnotes}
                   onCheckedChange={(checked: boolean | "indeterminate") => setIncludeFootnotes(checked === true)}
                 />
-                <span id="include-footnotes-label" className="tw-text-sm tw-text-foreground">{localizedStrings["%flexExport_footnotes%"]}</span>
+                <span id="include-footnotes-label" className="tw-text-sm tw-ms-2 tw-text-foreground">{localizedStrings["%flexExport_footnotes%"]}</span>
               </Label>
             </div>
           </div>
@@ -1732,7 +1673,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
               {/* FLEx Project Selector */}
               <div id="flex-project-row" className="tw-flex tw-items-center tw-gap-3">
-                <Label id="flex-project-label" htmlFor="flex-project-selector" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap">
+                <Label id="flex-project-label" htmlFor="flex-project-selector" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap tw-me-2">
                   {localizedStrings["%flexExport_project%"]}
                 </Label>
                 <ComboBox<FlexProjectOption>
@@ -1751,7 +1692,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
               {/* Writing System Selector - only shown when multiple vernacular WS exist */}
               {flexProjectDetails && writingSystemOptions.length > 1 && (
                 <div id="writing-system-row" className="tw-flex tw-items-center tw-gap-3">
-                  <Label id="writing-system-label" htmlFor="writing-system-selector" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap">
+                  <Label id="writing-system-label" htmlFor="writing-system-selector" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap tw-me-2">
                     {localizedStrings["%flexExport_writingSystem%"]}
                   </Label>
                   <ComboBox<WritingSystemOption>
@@ -1771,7 +1712,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
               {/* Text Name Field */}
               <div id="text-name-section" className="tw-flex tw-flex-col tw-gap-1">
                 <div id="text-name-row" className="tw-flex tw-items-center tw-gap-3">
-                  <Label id="text-name-label" htmlFor="text-name-input" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap">
+                  <Label id="text-name-label" htmlFor="text-name-input" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap tw-me-2">
                     {localizedStrings["%flexExport_textName%"]}
                   </Label>
                   <Input
@@ -1797,7 +1738,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                   checked={overwriteEnabled}
                   onCheckedChange={setOverwriteEnabled}
                 />
-                <Label htmlFor="overwrite-toggle" className="tw-text-sm tw-text-foreground tw-cursor-pointer">
+                <Label htmlFor="overwrite-toggle" className="tw-text-sm tw-text-foreground tw-cursor-pointer tw-ms-2">
                   {localizedStrings["%flexExport_overwrite%"]}
                 </Label>
               </div>
@@ -1816,24 +1757,16 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
                 {/* Progress bar shown during export */}
                 {exportSteps.length > 0 && (
-                  <ExportProgressBar steps={exportSteps} />
-                )}
-
-                {exportStatus?.success && lastExportedText && (
-                  <Button
-                    id="open-in-flex-button"
-                    size="sm"
-                    onClick={handleOpenInFlex}
-                  >
-                    Open in FLEx
-                  </Button>
+                  <div className="tw-ms-3">
+                    <ExportProgressBar steps={exportSteps} />
+                  </div>
                 )}
               </div>
 
               {exportStatus && (
                 <p
                   id="export-status-message"
-                  className={`tw-text-sm tw-whitespace-normal tw-break-words ${exportStatus.success ? "tw-text-green-600" : "tw-text-red-600"}`}
+                  className={`tw-text-sm tw-mt-2 tw-whitespace-normal tw-break-words ${exportStatus.success ? "tw-text-green-600" : "tw-text-red-600"}`}
                 >
                   {exportStatus.message}
                 </p>

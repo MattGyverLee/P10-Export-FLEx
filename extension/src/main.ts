@@ -315,22 +315,6 @@ export async function activate(context: ExecutionActivationContext) {
     }
   );
 
-  // Register command to get safe navigation target
-  const getSafeNavigationTargetPromise = papi.commands.registerCommand(
-    "flexExport.getSafeNavigationTarget",
-    async (
-      flexProjectName: string,
-      textTitle: string
-    ): Promise<{ guid?: string; tool: string }> => {
-      if (!flexBridge) {
-        return { tool: "default" };
-      }
-
-      const result = await flexBridge.getSafeNavigationTarget(flexProjectName, textTitle);
-      return result;
-    }
-  );
-
   // Register command to verify a text exists and is accessible by GUID
   const verifyTextPromise = papi.commands.registerCommand(
     "flexExport.verifyText",
@@ -351,40 +335,6 @@ export async function activate(context: ExecutionActivationContext) {
 
       const result = await flexBridge.verifyText(flexProjectName, textGuid);
       return result;
-    }
-  );
-
-  // Register command to navigate FLEx using deep link
-  const navigateFlexPromise = papi.commands.registerCommand(
-    "flexExport.navigateFlex",
-    async (deepLinkUrl: string): Promise<void> => {
-      const { createProcess } = context.elevatedPrivileges;
-      if (!createProcess) {
-        throw new Error("createProcess privilege not available");
-      }
-
-      // Use Windows cmd to open the deep link URL
-      // cmd /c start "" "url" - the empty "" is for the window title
-      return new Promise((resolve, reject) => {
-        const process = createProcess.spawn(
-          context.executionToken,
-          "cmd",
-          ["/c", "start", "", deepLinkUrl],
-          { stdio: "ignore" }
-        );
-
-        process.on("error", (err: Error) => {
-          reject(err);
-        });
-
-        process.on("close", (code: number | null) => {
-          if (code === 0 || code === null) {
-            resolve();
-          } else {
-            reject(new Error(`Process exited with code ${code}`));
-          }
-        });
-      });
     }
   );
 
@@ -424,9 +374,7 @@ export async function activate(context: ExecutionActivationContext) {
   context.registrations.add(await getFlexProjectInfoPromise);
   context.registrations.add(await checkTextNamePromise);
   context.registrations.add(await checkFlexStatusPromise);
-  context.registrations.add(await getSafeNavigationTargetPromise);
   context.registrations.add(await verifyTextPromise);
-  context.registrations.add(await navigateFlexPromise);
   context.registrations.add(await exportToFlexPromise);
 
   logger.info("flex-export extension finished activating!");

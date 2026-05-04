@@ -44,20 +44,10 @@ declare module 'flex-export' {
     /** Whether project sharing is enabled */
     sharingEnabled: boolean;
   }
-
-  /**
-   * Navigation target for safe redirect workflow
-   */
-  export interface NavigationTarget {
-    /** GUID to navigate to (null for default tool) */
-    guid?: string;
-    /** Tool to use: 'interlinearEdit', 'corpusStatistics', or 'default' */
-    tool: string;
-  }
 }
 
 declare module 'papi-shared-types' {
-  import type { FlexProjectInfo, CreateTextResult, FlexStatus, NavigationTarget } from 'flex-export';
+  import type { FlexProjectInfo, CreateTextResult, FlexStatus } from 'flex-export';
 
   export interface CommandHandlers {
     /**
@@ -94,23 +84,6 @@ declare module 'papi-shared-types' {
      * @returns Status of FLEx process and project sharing
      */
     'flexExport.checkFlexStatus': (flexProjectName: string) => Promise<FlexStatus>;
-
-    /**
-     * Finds a safe navigation target to redirect FLEx away from the text being overwritten
-     * @param flexProjectName Name of the FLEx project
-     * @param textTitle Title of the text being overwritten
-     * @returns Navigation target (text GUID and tool)
-     */
-    'flexExport.getSafeNavigationTarget': (
-      flexProjectName: string,
-      textTitle: string
-    ) => Promise<NavigationTarget>;
-
-    /**
-     * Navigates FLEx using a deep link URL
-     * @param deepLinkUrl The silfw:// URL to navigate to
-     */
-    'flexExport.navigateFlex': (deepLinkUrl: string) => Promise<void>;
 
     /**
      * Checks if a text name exists and gets a suggested alternative

@@ -519,15 +519,16 @@ describe('Content Filtering', () => {
       });
     });
 
-    // Issue #15: \id must always survive filtering, and the new Book Headers
-    // toggle gates \h / \toc* (which carry translatable content).
+    // Issue #15: \id passes through the filter unchanged when present. It is
+    // only present in chapter 1's USJ — when the export starts at a later
+    // chapter, no book node is synthesised, so the filter never sees one.
     describe('book identification (\\id) — issue #15', () => {
       const contentWithBook: (UsjNode | string)[] = [
         { type: 'book', marker: 'id', code: 'ROM' },
         { type: 'para', marker: 'p', content: ['Body text'] },
       ];
 
-      it('preserves the book node regardless of toggles', () => {
+      it('passes the book node through regardless of toggles', () => {
         const result = filterUsjContent(contentWithBook, true, {
           includeFootnotes: false,
           includeCrossRefs: false,
@@ -539,13 +540,6 @@ describe('Content Filtering', () => {
 
         expect(result).toHaveLength(2);
         expect(result[0]).toMatchObject({ type: 'book', marker: 'id', code: 'ROM' });
-      });
-
-      it('preserves the book node even on non-first chapters', () => {
-        const result = filterUsjContent(contentWithBook, false, defaultOptions);
-
-        expect(result).toHaveLength(2);
-        expect(result[0]).toMatchObject({ type: 'book', code: 'ROM' });
       });
     });
 

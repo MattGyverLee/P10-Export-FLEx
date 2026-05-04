@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run deploy:*)"
+      "Bash(npm run deploy:*)",
+      "Read(//d/Github/_Projects/_LEX/flexlibs/**)"
     ]
   }
 }

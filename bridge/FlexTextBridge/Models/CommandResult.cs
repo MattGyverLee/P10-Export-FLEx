@@ -81,18 +81,6 @@ namespace FlexTextBridge.Models
     }
 
     /// <summary>
-    /// Navigation target for safe redirect.
-    /// </summary>
-    public class NavigationTargetResult : CommandResult
-    {
-        [JsonProperty("guid", NullValueHandling = NullValueHandling.Ignore)]
-        public string Guid { get; set; }
-
-        [JsonProperty("tool")]
-        public string Tool { get; set; }
-    }
-
-    /// <summary>
     /// Result for the verify text command.
     /// </summary>
     public class VerifyTextResult : CommandResult

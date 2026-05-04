@@ -270,29 +270,6 @@ export class FlexBridgeService {
   }
 
   /**
-   * Find a safe navigation target to redirect FLEx away from the text being overwritten
-   */
-  async getSafeNavigationTarget(projectName: string, textTitle: string): Promise<{ guid?: string; tool: string }> {
-    try {
-      const args = ["--get-safe-target", "--project", projectName, "--title", textTitle];
-      const output = await this.runBridge(args);
-      const result = JSON.parse(output) as { success: boolean; guid?: string; tool: string };
-
-      if (result.success) {
-        return {
-          guid: result.guid,
-          tool: result.tool,
-        };
-      }
-
-      return { tool: "default" };
-    } catch (error) {
-      // On error, return default navigation
-      return { tool: "default" };
-    }
-  }
-
-  /**
    * Verify that a text exists and is accessible by its GUID.
    * This is a passive check to ensure a newly created/overwritten text is ready before navigation.
    * @param projectName Name of the FLEx project
