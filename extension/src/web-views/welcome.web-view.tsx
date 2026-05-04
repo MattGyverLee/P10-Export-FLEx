@@ -1483,7 +1483,8 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       if (flexStatus.isRunning && !flexStatus.sharingEnabled) {
         setExportStatus({
           success: false,
-          message: "The FieldWorks project chosen needs to have sharing enabled. Enable it via Edit > Project Properties > Sharing tab, or close FLEx and try again."
+          message: (localizedStrings["%flexExport_sharingDisabled%"] || "")
+            .replace("{projectName}", selectedFlexProject.name),
         });
         updateStep('export', 'error');
         setIsExporting(false);
@@ -1609,7 +1610,8 @@ globalThis.webViewComponent = function ExportToFlexWebView({
           // Special handling for locked project error
           setExportStatus({
             success: false,
-            message: result.error || "Project is locked. Please close FLEx or enable Project Sharing."
+            message: (localizedStrings["%flexExport_projectLocked%"] || "")
+              .replace("{projectName}", selectedFlexProject.name),
           });
         } else {
           const errorMessage = (localizedStrings["%flexExport_exportFailed%"] || "Export failed: {error}")
