@@ -6,6 +6,7 @@ import { Button, Checkbox, ComboBox, Input, Label, Switch, useEvent } from "plat
 import { ChapterOnlyBookControl } from "./components/ChapterOnlyBookControl";
 import { isPlatformError, getChaptersForBook } from "platform-bible-utils";
 import { Canon, SerializedVerseRef } from "@sillsdev/scripture";
+import { AlertCircle, AlertTriangle, CheckCircle2, Info, Loader2 } from "lucide-react";
 
 // Simple Modal Dialog Component (Dialog not yet exported from platform-bible-react)
 function Modal({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
@@ -59,7 +60,7 @@ function ExportProgressBar({ steps }: { steps: ExportStep[] }) {
   const activeStep = steps.find(s => s.status === 'active');
 
   return (
-    <div className="tw-mt-2 tw-mb-2">
+    <div className="tw-mt-1">
       <div className="tw-flex tw-gap-1 tw-mb-1">
         {steps.map((step) => (
           <div
@@ -75,8 +76,88 @@ function ExportProgressBar({ steps }: { steps: ExportStep[] }) {
         ))}
       </div>
       {activeStep && (
-        <div className="tw-text-xs tw-text-muted-foreground">
+        <div className="tw-text-xs tw-opacity-75">
           {activeStep.label}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Single, unified status strip rendered above the Scripture Preview. Replaces
+// the per-section error/progress/result blocks that previously lived inside
+// the FLEx Settings panel — those caused horizontal overflow when long
+// messages couldn't wrap (the panel was a tw-shrink-0 flex item, so it grew
+// to fit the longest line). The strip occupies a reserved min-height even
+// when idle, so showing/clearing a message never triggers layout shift.
+type StatusVariant = "info" | "progress" | "success" | "warning" | "error";
+
+const STATUS_VARIANT_STYLES: Record<StatusVariant, { container: string; Icon: React.ComponentType<{ className?: string }>; spinning?: boolean }> = {
+  info: {
+    container: "tw-bg-blue-50 tw-border-blue-200 tw-text-blue-900 dark:tw-bg-blue-900/20 dark:tw-border-blue-700 dark:tw-text-blue-200",
+    Icon: Info,
+  },
+  progress: {
+    container: "tw-bg-blue-50 tw-border-blue-200 tw-text-blue-900 dark:tw-bg-blue-900/20 dark:tw-border-blue-700 dark:tw-text-blue-200",
+    Icon: Loader2,
+    spinning: true,
+  },
+  success: {
+    container: "tw-bg-green-50 tw-border-green-200 tw-text-green-900 dark:tw-bg-green-900/20 dark:tw-border-green-700 dark:tw-text-green-200",
+    Icon: CheckCircle2,
+  },
+  warning: {
+    container: "tw-bg-amber-50 tw-border-amber-200 tw-text-amber-900 dark:tw-bg-amber-900/20 dark:tw-border-amber-700 dark:tw-text-amber-200",
+    Icon: AlertTriangle,
+  },
+  error: {
+    container: "tw-bg-red-50 tw-border-red-200 tw-text-red-900 dark:tw-bg-red-900/20 dark:tw-border-red-700 dark:tw-text-red-200",
+    Icon: AlertCircle,
+  },
+};
+
+type StatusStripProps = {
+  variant?: StatusVariant;
+  message?: string;
+  steps?: ExportStep[];
+  trailing?: React.ReactNode;
+};
+
+function StatusStrip({ variant, message, steps, trailing }: StatusStripProps) {
+  const hasMessage = !!variant && (!!message || (steps && steps.length > 0));
+  const style = hasMessage ? STATUS_VARIANT_STYLES[variant] : undefined;
+
+  const containerClasses = hasMessage && style
+    ? `tw-min-h-[2.75rem] tw-w-full tw-rounded-md tw-border tw-p-3 tw-flex tw-items-center tw-gap-3 ${style.container}`
+    : "tw-min-h-[2.75rem] tw-w-full tw-flex tw-items-center tw-justify-end";
+
+  return (
+    <div
+      id="status-strip"
+      role={hasMessage ? "status" : undefined}
+      aria-live={hasMessage ? "polite" : undefined}
+      className={containerClasses}
+    >
+      {hasMessage && style && (
+        <>
+          <style.Icon className={`tw-h-5 tw-w-5 tw-shrink-0 ${style.spinning ? "tw-animate-spin" : ""}`} />
+          <div className="tw-flex-1 tw-min-w-0">
+            {message && (
+              <p className="tw-text-sm tw-whitespace-normal tw-break-words tw-leading-snug">
+                {message}
+              </p>
+            )}
+            {steps && steps.length > 0 && (
+              <div className={message ? "tw-mt-2" : ""}>
+                <ExportProgressBar steps={steps} />
+              </div>
+            )}
+          </div>
+        </>
+      )}
+      {trailing && (
+        <div className="tw-shrink-0 tw-ms-auto">
+          {trailing}
         </div>
       )}
     </div>
@@ -1680,6 +1761,33 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     return <>{parts}</>;
   }, [usjJson, isRtl]);
 
+  // Resolve a single set of props for the unified StatusStrip from the
+  // multiple state sources that previously each rendered their own block.
+  // Priority: terminal export result > in-progress export > FLEx load gate.
+  const statusStripProps = useMemo<StatusStripProps>(() => {
+    if (exportStatus) {
+      return {
+        variant: exportStatus.success ? "success" : "error",
+        message: exportStatus.message,
+        steps: exportSteps.length > 0 ? exportSteps : undefined,
+      };
+    }
+    if (isExporting && exportSteps.length > 0) {
+      return {
+        variant: "progress",
+        message: localizedStrings["%flexExport_exporting%"],
+        steps: exportSteps,
+      };
+    }
+    if (flexLoadError) {
+      const message = flexLoadError === "no_projects"
+        ? localizedStrings["%flexExport_flexNotFound%"]
+        : (localizedStrings["%flexExport_flexLoadError%"] || "").replace("{error}", flexLoadError);
+      return { variant: "error", message };
+    }
+    return {};
+  }, [exportStatus, isExporting, exportSteps, flexLoadError, localizedStrings]);
+
   return (
     <div id="flex-export-container" className="tw-p-4 tw-min-h-screen tw-bg-background tw-text-foreground tw-font-sans" dir={isUiRtl ? "rtl" : "ltr"}>
       {/* Local override for ComboBox dropdown items in platform-bible-react:
@@ -1827,17 +1935,6 @@ globalThis.webViewComponent = function ExportToFlexWebView({
               </Label>
             </div>
             <div id="flex-settings-content" className="tw-px-4 tw-py-3 tw-space-y-3">
-              {/* Error message when FLEx is not available */}
-              {flexLoadError && (
-                <div id="flex-error-message" className="tw-p-2 tw-bg-red-50 tw-border tw-border-red-200 tw-rounded-md dark:tw-bg-red-900/20 dark:tw-border-red-700">
-                  <p className="tw-text-xs tw-text-red-800 dark:tw-text-red-200 tw-whitespace-normal tw-break-words">
-                    {flexLoadError === "no_projects"
-                      ? localizedStrings["%flexExport_flexNotFound%"]
-                      : (localizedStrings["%flexExport_flexLoadError%"] || "").replace("{error}", flexLoadError)}
-                  </p>
-                </div>
-              )}
-
               {/* FLEx Project Selector */}
               <div id="flex-project-row" className="tw-flex tw-items-center tw-gap-3">
                 <Label id="flex-project-label" htmlFor="flex-project-selector" className="tw-text-sm tw-text-foreground tw-whitespace-nowrap tw-me-2">
@@ -1910,34 +2007,8 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                 </Label>
               </div>
 
-              {/* Export Button and Status */}
-              <div id="export-button-row" className="tw-flex tw-items-center tw-gap-3 tw-pt-1">
-                <Button
-                  id="export-button"
-                  onClick={() => handleExport()}
-                  disabled={!selectedFlexProject || !textName || !chaptersUSJ.length || isExporting}
-                >
-                  {isExporting
-                    ? localizedStrings["%flexExport_exporting%"]
-                    : localizedStrings["%flexExport_export%"]}
-                </Button>
-
-                {/* Progress bar shown during export */}
-                {exportSteps.length > 0 && (
-                  <div className="tw-ms-3">
-                    <ExportProgressBar steps={exportSteps} />
-                  </div>
-                )}
-              </div>
-
-              {exportStatus && (
-                <p
-                  id="export-status-message"
-                  className={`tw-text-sm tw-mt-2 tw-whitespace-normal tw-break-words ${exportStatus.success ? "tw-text-green-600" : "tw-text-red-600"}`}
-                >
-                  {exportStatus.message}
-                </p>
-              )}
+              {/* Export action and status feedback now live in the unified
+                  StatusStrip rendered above the Scripture Preview. */}
 
               {/* Overwrite Confirmation Modal */}
               <Modal open={showOverwriteConfirm} onClose={handleCancelOverwrite}>
@@ -1981,6 +2052,25 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             </div>
           </div>
         </div>
+
+        {/* Unified status + primary action. Always rendered (with reserved
+            min-height) so showing/clearing a message never causes layout
+            shift, and the long-message wrap problem inside the FLEx Settings
+            box is gone. The Export button is anchored at the right end. */}
+        <StatusStrip
+          {...statusStripProps}
+          trailing={
+            <Button
+              id="export-button"
+              onClick={() => handleExport()}
+              disabled={!selectedFlexProject || !textName || !chaptersUSJ.length || isExporting}
+            >
+              {isExporting
+                ? localizedStrings["%flexExport_exporting%"]
+                : localizedStrings["%flexExport_export%"]}
+            </Button>
+          }
+        />
 
         {/* Scripture Preview */}
         <div id="scripture-preview-box" className="tw-mt-4 tw-border tw-border-border tw-rounded-md tw-bg-card">
