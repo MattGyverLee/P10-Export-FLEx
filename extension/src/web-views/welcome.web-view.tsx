@@ -978,6 +978,33 @@ globalThis.webViewComponent = function ExportToFlexWebView({
     return availableBookIds;
   }, [availableBookIds]);
 
+  // Localized book names for the BookChapterControl (trigger label + popover).
+  // Pulls %LocalizedId.<BOOK>% / %Book.<BOOK>% from the active UI language —
+  // the same convention platform-scripture's find.web-view.tsx uses. Falls
+  // back to canonical English in the wrapper when an entry is missing.
+  // Keys span all canon books before the project loads (availableBookIds is
+  // empty until then) and narrow to the project's set once available.
+  const bookLocalizationKeys = useMemo(() => {
+    const ids = availableBookIds.length > 0 ? availableBookIds : Canon.allBookIds;
+    const keys: `%${string}%`[] = [];
+    ids.forEach((book) => {
+      keys.push(`%LocalizedId.${book}%` as const);
+      keys.push(`%Book.${book}%` as const);
+    });
+    return keys;
+  }, [availableBookIds]);
+  const [localizedBookStrings] = useLocalizedStrings(bookLocalizationKeys);
+  const localizedBookNames = useMemo(() => {
+    const ids = availableBookIds.length > 0 ? availableBookIds : Canon.allBookIds;
+    const map = new Map<string, { localizedId: string; localizedName: string }>();
+    ids.forEach((book) => {
+      const localizedId = localizedBookStrings[`%LocalizedId.${book}%` as const];
+      const localizedName = localizedBookStrings[`%Book.${book}%` as const];
+      if (localizedId && localizedName) map.set(book, { localizedId, localizedName });
+    });
+    return map;
+  }, [availableBookIds, localizedBookStrings]);
+
   // Find selected project option
   const selectedProject = useMemo(() => {
     if (!projectId || !projectOptions.length) return undefined;
@@ -1951,6 +1978,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
                     scrRef={scrRef}
                     handleSubmit={handleStartRefChange}
                     getActiveBookIds={availableBookIds.length > 0 ? getActiveBookIds : undefined}
+                    localizedBookNames={localizedBookNames}
                     className="tw-h-9 tw-px-3"
                   />
                   <Label id="end-chapter-label" htmlFor="end-chapter-selector" className="tw-text-sm tw-text-foreground tw-mx-2">{localizedStrings["%flexExport_toChapter%"]}</Label>

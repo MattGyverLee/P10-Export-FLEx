@@ -15,12 +15,14 @@ const bookIdToNumber: Record<string, number> = {
   '2SA': 10,
   '1KI': 11,
   '2KI': 12,
+  PSA: 19,
   MAT: 40,
   MRK: 41,
   LUK: 42,
   JHN: 43,
   ACT: 44,
   ROM: 45,
+  '1JN': 62,
   REV: 66,
 };
 
@@ -41,12 +43,14 @@ const bookIdToEnglishName: Record<string, string> = {
   '2SA': '2 Samuel',
   '1KI': '1 Kings',
   '2KI': '2 Kings',
+  PSA: 'Psalms',
   MAT: 'Matthew',
   MRK: 'Mark',
   LUK: 'Luke',
   JHN: 'John',
   ACT: 'Acts',
   ROM: 'Romans',
+  '1JN': '1 John',
   REV: 'Revelation',
 };
 
