@@ -511,7 +511,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
   // Export state
   const [isExporting, setIsExporting] = useState(false);
-  const [exportStatus, setExportStatus] = useState<{ success: boolean; message: string } | undefined>();
+  const [exportStatus, setExportStatus] = useState<{ variant: "success" | "warning" | "error"; message: string } | undefined>();
   const [exportSteps, setExportSteps] = useState<ExportStep[]>([]);
 
   // Helper to update a single export step's status
@@ -1482,7 +1482,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
       // If FLEx is open but sharing is NOT enabled, show error
       if (flexStatus.isRunning && !flexStatus.sharingEnabled) {
         setExportStatus({
-          success: false,
+          variant: "error",
           message: (localizedStrings["%flexExport_sharingDisabled%"] || "")
             .replace("{projectName}", selectedFlexProject.name),
         });
@@ -1557,7 +1557,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         const successMessage = messageTemplate
           .replace("{paragraphCount}", String(exportedCount))
           .replace("{textName}", result.textName || nameToUse);
-        setExportStatus({ success: true, message: successMessage });
+        setExportStatus({ variant: "success", message: successMessage });
         setExportCount(prev => prev + 1);
 
         if (result.textGuid) {
@@ -1589,6 +1589,16 @@ globalThis.webViewComponent = function ExportToFlexWebView({
             }
 
             updateStep('verify', textVerified ? 'done' : 'warning');
+            if (!textVerified) {
+              // Export wrote successfully but FLEx hasn't surfaced the new
+              // text yet. Override the green success status with an actionable
+              // warning so the user knows to refresh FLEx.
+              setExportStatus({
+                variant: "warning",
+                message: (localizedStrings["%flexExport_verifyTimeout%"] || "")
+                  .replace("{textName}", result.textName || nameToUse),
+              });
+            }
           } else {
             updateStep('verify', 'done');
           }
@@ -1609,14 +1619,14 @@ globalThis.webViewComponent = function ExportToFlexWebView({
         } else if (result.errorCode === "PROJECT_LOCKED") {
           // Special handling for locked project error
           setExportStatus({
-            success: false,
+            variant: "error",
             message: (localizedStrings["%flexExport_projectLocked%"] || "")
               .replace("{projectName}", selectedFlexProject.name),
           });
         } else {
           const errorMessage = (localizedStrings["%flexExport_exportFailed%"] || "Export failed: {error}")
             .replace("{error}", result.error || "Unknown error");
-          setExportStatus({ success: false, message: errorMessage });
+          setExportStatus({ variant: "error", message: errorMessage });
         }
       }
     } catch (err) {
@@ -1639,7 +1649,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
       const errorMessage = (localizedStrings["%flexExport_exportFailed%"] || "Export failed: {error}")
         .replace("{error}", errorText);
-      setExportStatus({ success: false, message: errorMessage });
+      setExportStatus({ variant: "error", message: errorMessage });
     } finally {
       setIsExporting(false);
       // Clear progress steps after a delay so user can see final state
@@ -1769,7 +1779,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   const statusStripProps = useMemo<StatusStripProps>(() => {
     if (exportStatus) {
       return {
-        variant: exportStatus.success ? "success" : "error",
+        variant: exportStatus.variant,
         message: exportStatus.message,
         steps: exportSteps.length > 0 ? exportSteps : undefined,
       };
