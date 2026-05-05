@@ -1168,7 +1168,7 @@ globalThis.webViewComponent = function ExportToFlexWebView({
   const isIntroMarker = (marker: string): boolean => {
     // Intro markers: imt, is, ip, ipi, im, imi, ipq, imq, ipr, iq, ib, ili, iot, io, iex, ie
     // Also includes main title markers (mt, mt1...) per FLExTrans convention
-    return /^(imt\d?|is\d?|ip|ipi|im|imi|ipq|imq|ipr|iq\d?|ib|ili\d?|iot|io\d?|iex|ie|mt\d?)$/.test(marker);
+    return /^(imte?\d?|is\d?|ip|ipi|im|imi|ipq|imq|ipr|iq\d?|ib|ili\d?|iot|io\d?|iex|ie|mte?\d?)$/.test(marker);
   };
 
   // Book header markers (\h running header, \toc1-3 / \toca1-3 table-of-contents
