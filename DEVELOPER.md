@@ -1,206 +1,214 @@
-# Developer Guide
+# Developer guide
 
-This guide covers development setup, building, and local testing of P10-Export-FLEx.
+Setup, build, test, deploy, and release for P10-Export-FLEx.
 
 ## Prerequisites
 
-- Node.js 22.16.0 (use [volta](https://docs.volta.sh/) for automatic version management)
-- .NET 6 or later (for the bridge CLI)
-- Git
+- **Node.js 22.16.0** — use [Volta](https://docs.volta.sh/) to pin automatically.
+- **.NET SDK 6.0+** — for building the bridge.
+- **FieldWorks 9** — Windows-only; the bridge references DLLs from `C:\Program Files\SIL\FieldWorks 9` (or wherever FieldWorks is installed). Without it, you can build the TypeScript extension but not the bridge.
+- **PowerShell** — required for the release script (`scripts/release.ps1`).
+- **GitHub CLI (`gh`)** — required for publishing releases.
+- **Git**.
 
-## Cloning the Repository
+## Clone
 
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/yourusername/P10-Export-FLEx.git
-   cd P10-Export-FLEx
-   ```
+The extension expects `paranext-core` to live next to this repo so that relative imports in the bundle config resolve. The structure should be:
 
-2. Clone paranext-core (required for extension development):
-   ```bash
-   # Clone to the same parent directory
-   cd ..
-   git clone https://github.com/yourusername/paranext-core.git
+```
+<workspace>/
+├── P10-Export-FLEx/
+└── paranext-core/
+```
 
-   # Your directory structure should look like:
-   # /path/to/repos/
-   #   ├── P10-Export-FLEx/
-   #   └── paranext-core/
-   ```
+Clone both:
 
-## Installing Dependencies
+```bash
+git clone https://github.com/MattGyverLee/P10-Export-FLEx.git
+git clone https://github.com/paranext/paranext-core.git
+cd P10-Export-FLEx
+```
+
+## Install dependencies
+
+```bash
+cd extension && npm install        # extension TypeScript deps
+cd ../bridge/FlexTextBridge && dotnet restore   # bridge .NET deps
+```
+
+## Build
+
+```bash
+cd extension
+npm run build              # development build (extension + bridge)
+npm run build:production   # release-mode bundle, used by `npm run package`
+npm run watch              # rebuild on file change
+```
+
+The bridge alone:
+
+```bash
+cd bridge/FlexTextBridge
+dotnet build               # writes FlexTextBridge.exe to extension/dist/bridge/
+```
+
+## Run inside Paratext
+
+`scripts/deploy.js` writes `extension/dist/` into the Paratext install. Both layouts are handled — Paratext 10 Studio (`paratext-10-studio`) and the newer `platform-bible` install root — so you can test against either without manual copies.
+
+```bash
+cd extension
+npm run deploy             # build + copy dist/ to every install root that exists
+```
+
+After deploy, restart Paratext Studio. The extension appears under any Scripture editor's Project menu as **Export Chapter(s) to FLEx**.
+
+If you want to develop against a local Paranext core instead:
+
+```bash
+npm run start              # runs paranext-core with --extensions <this dist/>
+```
+
+## Tests
+
+```bash
+npm test                   # 128 tests across 6 suites
+npm run test:watch         # watch mode
+npm run test:coverage      # generate coverage report
+```
+
+The test suite covers the bridge wrapper service, the welcome web-view, content-filtering rules, persistence, the chapter-only book selector, and a Modal interaction smoke test. There's no end-to-end harness for the bridge itself — bridge correctness is verified by running the extension against real FLEx projects.
+
+## The bridge command surface
+
+Each command is one class under `bridge/FlexTextBridge/Commands/`. The extension calls them by spawning `FlexTextBridge.exe` with flags and reading the JSON response from stdout (success) or stderr (failure).
+
+| Flag | Class | Purpose |
+| --- | --- | --- |
+| `--list-projects` | `ListProjectsCommand` | Enumerate FLEx projects with their writing systems (read straight from `.fwdata` XML — no LCM cache load). |
+| `--project-info --project <name>` | `ProjectInfoCommand` | Same shape as list-projects but for a single project. Kept for API symmetry. |
+| `--check-text --project <name> --title <title>` | `CheckTextCommand` | Returns whether a text by that name already exists, plus the next available `(N)` suggestion. |
+| `--verify-text --project <name> --guid <guid>` | `VerifyTextCommand` | Passive check that a newly-created text is accessible — used after export to gate the "Open in FLEx" button. |
+| `--check-flex-status --project <name>` | `CheckFlexStatusCommand` | Detects whether FLEx is running and whether project sharing is enabled. |
+| `--project <name> --title <title> [--vernacular-ws <code>] [--overwrite]` | `CreateTextCommand` | The actual export. Reads USJ JSON from stdin, writes a tagged FLEx text, returns the GUID. |
+| `--log-dir <path>` | (any command) | Override the log directory. The extension passes `%LOCALAPPDATA%\SIL\P10-Export-FLEx\logs`. |
+
+Run `FlexTextBridge.exe --help` for the full reference.
+
+## Logs
+
+The bridge writes a daily-rotating log when an unhandled exception escapes a command:
+
+```
+%LOCALAPPDATA%\SIL\P10-Export-FLEx\logs\bridge-YYYYMMDD.log
+```
+
+*Handled* error paths (project not found, text already exists, invalid GUID) don't write — the JSON response already conveys those. Only unexpected failures do. Logs older than 30 days are pruned automatically.
+
+When debugging a bridge failure, the log entry contains the full stack trace and the command context (which project, which text title, etc.) — usually enough to locate the bug without running a debugger.
+
+## Available scripts
 
 ### Extension
 
-```bash
-cd extension
-npm install
-```
+| Script | Description |
+| --- | --- |
+| `npm run build` | Webpack build + bridge build |
+| `npm run build:production` | Production bundle |
+| `npm run watch` | Rebuild on file change |
+| `npm run deploy` | Build + copy `dist/` to every Paratext install root that exists |
+| `npm run start` | Run paranext-core with this extension wired in (requires sibling `paranext-core/`) |
+| `npm run start:production` | Same as `start` but with production bundle |
+| `npm run package` | Build + zip for distribution → `extension/release/flex-export_<version>.zip` |
+| `npm test` | Jest |
+| `npm run test:watch` / `:coverage` | Variants |
+| `npm run lint` / `lint-fix` | ESLint + stylelint |
+| `npm run format` / `format:check` | Prettier |
 
-### Bridge CLI
+### Bridge
 
-```bash
-cd bridge/FlexTextBridge
-dotnet restore
-```
+| Script | Description |
+| --- | --- |
+| `npm run build:bridge` | `dotnet build` of just the .NET project |
 
-## Building the Project
+### Repo root
 
-### Full Build
+| Script | Description |
+| --- | --- |
+| `scripts/release.ps1 -Version <X.Y.Z>` | Build, package, and publish a GitHub release with the zip attached. |
 
-Build both the extension and bridge:
+## Releasing
 
-```bash
-cd extension
-npm run build
-```
+A release ships two artifacts: the version-bumped source tag (`vX.Y.Z`) and a zip published on GitHub Releases.
 
-This command will:
-1. Build the TypeScript extension code
-2. Build the C# bridge CLI
+### Steps
 
-### Development Mode
-
-For development with auto-rebuild on file changes:
-
-```bash
-npm run watch
-```
-
-### Production Build
-
-For production builds with optimizations:
-
-```bash
-npm run build:production
-```
-
-## Local Testing in Paratext
-
-### Automated Deployment
-
-After building, deploy the extension to your local Paratext installation:
-
-```bash
-cd extension
-npm run deploy
-```
-
-This script will:
-1. Build the extension and bridge CLI
-2. Remove any existing extension installation
-3. Copy the compiled extension (`dist/` folder) to Paratext's extension directory
-4. Make it available in Paratext on the next restart
-
-The plugin is deployed to: `%LOCALAPPDATA%\Programs\paratext-10-studio\resources\extensions\flex-export`
-
-### Manual Installation
-
-If you need to manually install the extension:
-
-1. Ensure the extension is built:
+1. **Bump the version** in `extension/package.json` and `extension/manifest.json` to `X.Y.Z`.
+2. **Add a CHANGELOG entry** for `X.Y.Z` summarizing what shipped (see [CHANGELOG.md](./CHANGELOG.md) for format). Include the Paratext minimum / recommended version line.
+3. **Commit and push** to `main`.
+4. **Tag and push:**
    ```bash
-   cd extension
-   npm run build
+   git tag -a vX.Y.Z -m "Release vX.Y.Z"
+   git push origin vX.Y.Z
    ```
-
-2. Create the target directory if it doesn't exist:
+5. **Build the bridge in Release mode** (must be done on a machine with FieldWorks 9 — CI can't do this):
    ```bash
-   mkdir "%LOCALAPPDATA%\Programs\paratext-10-studio\resources\extensions\flex-export"
+   cd bridge/FlexTextBridge
+   dotnet build -c Release
    ```
+6. **Run the release script:**
+   ```powershell
+   scripts/release.ps1 -Version X.Y.Z
+   ```
+   This builds the production bundle, zips it to `extension/release/flex-export_X.Y.Z.zip`, and creates the GitHub release with the zip attached. The release notes default to brief installation instructions; for substantive notes, edit the published release with `gh release edit vX.Y.Z --notes-file <file>` afterwards.
 
-3. Copy the entire `extension/dist/` folder contents to that directory
+### Manual fallback
 
-4. Restart Paratext Studio to load the extension
+If the script fails, the equivalent commands are:
 
-## Available Scripts
-
-### Extension Development
-
-- `npm run build` - Build extension and bridge CLI
-- `npm run build:production` - Production build with optimizations
-- `npm run watch` - Watch mode with auto-rebuild
-- `npm run deploy` - Build and deploy to local Paratext installation
-- `npm run lint` - Run ESLint and stylelint
-- `npm run lint-fix` - Fix linting issues
-- `npm run test` - Run Jest tests
-- `npm run test:watch` - Watch mode for tests
-- `npm run test:coverage` - Generate test coverage report
-- `npm run start` - Start development environment with paranext-core
-- `npm run package` - Create distributable zip file
-
-### Bridge CLI
-
-- `npm run build:bridge` - Build just the C# CLI
-
-## Creating a Release
-
-### Prerequisites
-- Windows with FieldWorks 9 installed
-- GitHub CLI: https://cli.github.com
-- Node.js 22.16.0+
-
-### Release Steps
-
-**1. Build the bridge locally** (Windows with FieldWorks 9):
-```bash
-cd bridge/FlexTextBridge
-dotnet build -c Release
-```
-
-**2. Build and release using the script:**
-```bash
-./scripts/release.ps1 -Version 0.1.0
-```
-
-This script will:
-- Build the extension
-- Verify the bridge executable exists
-- Create a GitHub release with the zip file uploaded
-
-Alternatively, do it manually:
 ```bash
 cd extension
 npm run package
-gh release create v0.1.0 release/flex-export_0.1.0.zip --title "Release v0.1.0" --notes "See README.md for installation"
+gh release create vX.Y.Z release/flex-export_X.Y.Z.zip --title "Release vX.Y.Z" --notes-file ../docs/release-notes-X.Y.Z.md
 ```
 
-**Note:** The bridge CLI requires FieldWorks 9 (Windows only). The compiled `FlexTextBridge.exe` must be built locally and included in `extension/dist/bridge/` before creating a release.
+### What the GitHub Actions workflow does (and doesn't)
+
+`.github/workflows/release.yml` is a manual-trigger workflow that builds the TypeScript extension and creates a release, but it **skips the bridge build** — CI runners don't have FieldWorks. Use the workflow for extension-only fixes; use `scripts/release.ps1` for any release that includes bridge changes.
 
 ## Troubleshooting
 
-### Extension not appearing in Paratext
+### Extension doesn't appear after deploy
 
-- Verify the extension was built: Check that `extension/dist/` contains files
-- Verify the deployment: Check that files exist in `%LOCALAPPDATA%\Programs\paratext-10-studio\resources\extensions\flex-export`
-- Restart Paratext Studio completely
-- Check Paratext logs for any extension loading errors
+- Confirm `extension/dist/` was populated (look for `main.js` and `bridge/FlexTextBridge.exe`).
+- Confirm the deployed copy landed in the right install root (deploy logs the path).
+- Restart Paratext Studio fully — closing the window doesn't fully unload the extension host.
 
-### Bridge CLI issues
+### Bridge fails to load
 
-- Ensure .NET 6+ is installed: `dotnet --version`
-- Verify the CLI built: Check that `extension/dist/` contains the FlexTextBridge executable
-- Test the CLI directly:
+- `dotnet --version` must report 6+.
+- The bridge resolves FieldWorks DLLs from the registry (`HKLM\SOFTWARE\SIL\FieldWorks\9`) or from `C:\Program Files\SIL\FieldWorks 9`. If neither resolves, the assembly resolver in `Program.cs` returns null and the process crashes during static init. Check the bridge log; if it's empty, the crash happened before logging initialized.
+- Test the CLI in isolation:
   ```bash
   cd bridge/FlexTextBridge
-  dotnet run -- --help
+  dotnet run -- --list-projects
   ```
 
-### Build failures
+### Build errors
 
-- Clear node_modules and reinstall:
+- Stale Node modules:
   ```bash
   cd extension
-  rm -r node_modules package-lock.json
+  rm -rf node_modules package-lock.json
   npm install
   ```
-- Clear .NET build artifacts:
+- Stale .NET artifacts:
   ```bash
   cd bridge/FlexTextBridge
-  dotnet clean
-  dotnet restore
+  dotnet clean && dotnet restore
   ```
+- Webpack import errors that look like missing types from `paranext-core` — check that the `paranext-core` clone is at the expected sibling path (see [Clone](#clone)).
 
-## Architecture Reference
+## Architecture reference
 
-See the [CLAUDE.md](./CLAUDE.md) file for detailed architecture documentation, component descriptions, and development phase plans.
+[CLAUDE.md](./CLAUDE.md) has the architecture diagram, component descriptions, and pointers to the FLExTrans modules whose conventions we replicate.
