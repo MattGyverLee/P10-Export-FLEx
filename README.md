@@ -2,7 +2,7 @@
 
 A Paratext 10 Studio extension that exports Scripture texts to FieldWorks Language Explorer (FLEx) for linguistic analysis.
 
-It replaces the older workflow of running FLExTools' `ImportFromParatext` module: instead of switching tools, you select books and chapters from inside Paratext and the text appears in your FLEx project — already tagged with the correct writing systems.
+This Paratext extension covers export to FLEx from Paratext 10 — a process not currently supported from within FLExTrans or FLEx. You select books and chapters from inside Paratext and the text appears in your FLEx project, already tagged with the correct writing systems.
 
 ## Why use this?
 
