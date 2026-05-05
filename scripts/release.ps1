@@ -99,11 +99,13 @@ The extension will be available in your Paratext menu.
 For development setup, see [DEVELOPER.md](https://github.com/MattGyverLee/P10-Export-FLEx/blob/main/DEVELOPER.md)
 "@
 
+    # Note: omit --draft entirely to publish immediately. PowerShell-style
+    # `--draft:$false` becomes the literal `--draft:False` to native exes,
+    # which `gh` rejects.
     gh release create "v$Version" `
         $zipFile `
         --title "Release v$Version" `
-        --notes $releaseNotes `
-        --draft:$false
+        --notes $releaseNotes
 }
 catch {
     Write-Host "[ERROR] Failed to create release: $_" -ForegroundColor Red
