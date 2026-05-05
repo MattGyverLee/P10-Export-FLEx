@@ -228,7 +228,11 @@ namespace FlexTextBridge.Services
                     throw new InvalidOperationException($"Text was created but verification failed for GUID {textGuid}");
                 }
 
-                return (scriptureParagraphCount, textGuid);
+                // If a write succeeded but produced no vernacular paragraphs (analysis-only
+                // edge case — e.g. a chapter range with only \id and \c lines), fall back
+                // to totalCreated so the success message never reports "0 paragraphs".
+                var reportedCount = scriptureParagraphCount > 0 ? scriptureParagraphCount : totalCreated;
+                return (reportedCount, textGuid);
             }
         }
 

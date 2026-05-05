@@ -26,6 +26,7 @@ const welcomeWebViewType = "flex-export.welcome";
 interface ExportToFlexWebViewOptions extends GetWebViewOptions {
   projectId?: string;
   initialScrRef?: SerializedVerseRef;
+  notExportableReason?: "resource";
 }
 
 /**
@@ -168,6 +169,11 @@ const welcomeWebViewProvider: IWebViewProvider = {
         ...savedWebView.state,
         initialScrRef,
         preloadedStrings,
+        // Mirror notExportableReason into state so first-mount reads it
+        // synchronously. The navigation event covers reuse but races mount
+        // on first creation. Not persisted across saves — each invocation
+        // sets it explicitly (undefined clears it).
+        notExportableReason: getWebViewOptions.notExportableReason,
       },
     };
   },
@@ -256,6 +262,7 @@ export async function activate(context: ExecutionActivationContext) {
       const options: ExportToFlexWebViewOptions = {
         projectId,
         initialScrRef,
+        notExportableReason,
       };
 
       const openedWebViewId = await papi.webViews.openWebView(
@@ -265,9 +272,11 @@ export async function activate(context: ExecutionActivationContext) {
       );
 
       // Push the invocation context to a running panel. On first creation the
-      // component gets these via state at mount (still useful as a redundant
-      // signal). On reuse, this is the ONLY channel that reaches the running
-      // React component — see NAVIGATION_EVENT_TYPE comment.
+      // component reads projectId/initialScrRef/notExportableReason from state
+      // at mount (set by the WebView provider above), so the event is a
+      // redundant signal there. On reuse the provider does not re-run, so this
+      // event is the ONLY channel that reaches the live React component —
+      // see NAVIGATION_EVENT_TYPE comment.
       navigationContextEmitter.emit({ projectId, initialScrRef, notExportableReason });
 
       return openedWebViewId;

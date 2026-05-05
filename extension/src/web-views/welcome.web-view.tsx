@@ -372,8 +372,15 @@ globalThis.webViewComponent = function ExportToFlexWebView({
 
   // Reason the host couldn't auto-select a source project (e.g. invoked from
   // a resource pane). Surfaced as an info-variant message in the StatusStrip
-  // until the user picks an editable project.
-  const [notExportableReason, setNotExportableReason] = useState<"resource" | undefined>();
+  // until the user picks an editable project. Seeded from state so it's
+  // present on first mount even if the navigation event fires before the
+  // useEvent subscription below is attached.
+  const initialNotExportableReason = state?.notExportableReason as
+    | "resource"
+    | undefined;
+  const [notExportableReason, setNotExportableReason] = useState<"resource" | undefined>(
+    initialNotExportableReason
+  );
 
   // Pending nav target — when a nav event arrives carrying a different projectId
   // than the current panel's projectId, we stash the scrRef here and defer
