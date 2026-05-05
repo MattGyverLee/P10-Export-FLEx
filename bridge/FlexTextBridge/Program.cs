@@ -97,7 +97,6 @@ namespace FlexTextBridge
             bool checkText = false;
             bool verifyText = false;
             bool checkFlexStatus = false;
-            bool getSafeTarget = false;
             bool showVersion = false;
             bool showHelp = false;
 
@@ -132,10 +131,6 @@ namespace FlexTextBridge
 
                     case "--check-flex-status":
                         checkFlexStatus = true;
-                        break;
-
-                    case "--get-safe-target":
-                        getSafeTarget = true;
                         break;
 
                     case "--project":
@@ -211,12 +206,6 @@ namespace FlexTextBridge
                 return command.Execute();
             }
 
-            if (getSafeTarget && !string.IsNullOrEmpty(project) && !string.IsNullOrEmpty(title))
-            {
-                var command = new GetSafeNavigationTargetCommand(project, title);
-                return command.Execute();
-            }
-
             if (projectInfo && !string.IsNullOrEmpty(project))
             {
                 var command = new ProjectInfoCommand(project);
@@ -244,7 +233,6 @@ namespace FlexTextBridge
             Console.Error.WriteLine("  FlexTextBridge --check-text --project <name> --title <title>");
             Console.Error.WriteLine("  FlexTextBridge --verify-text --project <name> --guid <guid>");
             Console.Error.WriteLine("  FlexTextBridge --check-flex-status --project <name>");
-            Console.Error.WriteLine("  FlexTextBridge --get-safe-target --project <name> --title <title>");
             Console.Error.WriteLine("  FlexTextBridge --project <name> --title <title> [--vernacular-ws <code>] [--overwrite] < scripture.json");
             Console.Error.WriteLine();
             Console.Error.WriteLine("Options:");
@@ -253,7 +241,6 @@ namespace FlexTextBridge
             Console.Error.WriteLine("  -c, --check-text             Check if text name exists and get suggested alternative");
             Console.Error.WriteLine("      --verify-text            Verify text exists and is accessible by GUID");
             Console.Error.WriteLine("      --check-flex-status      Check if FLEx is running and if project sharing is enabled");
-            Console.Error.WriteLine("      --get-safe-target        Find safe navigation target for overwrite workflow");
             Console.Error.WriteLine("  -p, --project <name>         Name of the FLEx project to use");
             Console.Error.WriteLine("  -t, --title <title>          Title for the new text (e.g., 'Mark 01-03')");
             Console.Error.WriteLine("  -g, --guid <guid>            Text GUID for verification");

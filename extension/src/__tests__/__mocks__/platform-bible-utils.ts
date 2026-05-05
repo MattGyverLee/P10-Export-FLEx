@@ -5,6 +5,27 @@
 // Mock isPlatformError
 export const isPlatformError = jest.fn((_value: unknown): boolean => false);
 
+// Mock formatScrRefRange — mirrors the real util's verseNum<0 / chapterNum<0
+// omission rules, start==end collapse, and `optionOrLocalizedBookName`
+// book rendering. The wrapper always passes an already-resolved book name
+// string, so the mock just uses it verbatim (and falls back to the book ID
+// for the 'id'/undefined cases).
+type ScrRefLike = { book: string; chapterNum: number; verseNum: number };
+type FormatOpts = { optionOrLocalizedBookName?: 'id' | 'English' | string };
+const formatScrRefSingle = (r: ScrRefLike, opt: FormatOpts['optionOrLocalizedBookName']): string => {
+  const versePart = r.verseNum < 0 ? '' : `:${r.verseNum}`;
+  const chapterPart = r.chapterNum < 0 ? '' : `${r.chapterNum}${versePart}`;
+  const bookStr = opt && opt !== 'id' && opt !== 'English' ? opt : r.book;
+  return chapterPart ? `${bookStr} ${chapterPart}` : bookStr;
+};
+export const formatScrRefRange = jest.fn(
+  (start: ScrRefLike, end: ScrRefLike, options?: FormatOpts): string => {
+    const startStr = formatScrRefSingle(start, options?.optionOrLocalizedBookName);
+    const endStr = formatScrRefSingle(end, options?.optionOrLocalizedBookName);
+    return startStr === endStr ? startStr : `${startStr}-${endStr}`;
+  },
+);
+
 // Mock getChaptersForBook (returns chapter count for a book)
 export const getChaptersForBook = jest.fn((bookNum: number): number => {
   const chapterCounts: Record<number, number> = {
@@ -38,6 +59,7 @@ export const isString = jest.fn((value: unknown): value is string => {
 // Export everything as default too
 export default {
   isPlatformError,
+  formatScrRefRange,
   getChaptersForBook,
   serialize,
   deserialize,

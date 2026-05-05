@@ -26,6 +26,33 @@ const welcomeWebViewType = "flex-export.welcome";
 interface ExportToFlexWebViewOptions extends GetWebViewOptions {
   projectId?: string;
   initialScrRef?: SerializedVerseRef;
+  notExportableReason?: "resource";
+}
+
+/**
+ * Payload pushed to the WebView every time the Export menu item is invoked.
+ *
+ * Paranext's openWebView with `existingId: "?"` brings an already-open panel to
+ * front WITHOUT re-running the WebView provider or pushing new props/state to
+ * the running React component (see web-view.service-host.ts: when an existing
+ * webView is found it just calls `updateWebViewDefinitionSync(id, {}, true)`
+ * for bringToFront and returns). So host-supplied projectId/initialScrRef in
+ * the openWebView options reach the component on FIRST creation only.
+ *
+ * On every menu invocation we also fire this event; the WebView listens and
+ * re-syncs scripture ref + project to the menu's invocation context. Issue #14.
+ */
+const NAVIGATION_EVENT_TYPE = "flexExport.navigationContext";
+interface NavigationContext {
+  projectId?: string;
+  initialScrRef?: SerializedVerseRef;
+  /**
+   * Reason a source project was NOT auto-selected, so the WebView can surface
+   * an inline explanation in its StatusStrip (replaces a global toast that
+   * appeared outside the panel and was easy to miss).
+   * - "resource": invoked from a resource pane, which is read-only.
+   */
+  notExportableReason?: "resource";
 }
 
 /** All localization keys used in the WebView */
@@ -48,6 +75,7 @@ const LOCALIZATION_KEYS = [
   "%flexExport_introduction%",
   "%flexExport_remarks%",
   "%flexExport_figures%",
+  "%flexExport_bookHeaders%",
   "%flexExport_formatted%",
   "%flexExport_usfm%",
   "%flexExport_usjData%",
@@ -79,6 +107,7 @@ const LOCALIZATION_KEYS = [
   "%flexExport_export%",
   "%flexExport_exporting%",
   "%flexExport_exportSuccess%",
+  "%flexExport_exportSuccessSingular%",
   "%flexExport_exportFailed%",
   "%flexExport_windowsOnly%",
   "%flexExport_noFlexProjectSelected%",
@@ -140,6 +169,11 @@ const welcomeWebViewProvider: IWebViewProvider = {
         ...savedWebView.state,
         initialScrRef,
         preloadedStrings,
+        // Mirror notExportableReason into state so first-mount reads it
+        // synchronously. The navigation event covers reuse but races mount
+        // on first creation. Not persisted across saves — each invocation
+        // sets it explicitly (undefined clears it).
+        notExportableReason: getWebViewOptions.notExportableReason,
       },
     };
   },
@@ -167,6 +201,13 @@ export async function activate(context: ExecutionActivationContext) {
     welcomeWebViewProvider
   );
 
+  // Network event used to push the menu-invocation context (project + scrRef)
+  // into an already-open Export panel. See NAVIGATION_EVENT_TYPE comment above.
+  const navigationContextEmitter = papi.network.createNetworkEventEmitter<NavigationContext>(
+    NAVIGATION_EVENT_TYPE
+  );
+  context.registrations.add(navigationContextEmitter);
+
   // Register command to open the export dialog
   // When invoked from a WebView menu, webViewId is passed automatically as the first argument
   const openExportDialogPromise = papi.commands.registerCommand(
@@ -174,6 +215,7 @@ export async function activate(context: ExecutionActivationContext) {
     async (webViewId?: string) => {
       let projectId: string | undefined;
       let initialScrRef: SerializedVerseRef | undefined;
+      let notExportableReason: "resource" | undefined;
 
       // If invoked from a WebView, get the project and current scripture reference
       if (webViewId) {
@@ -190,11 +232,10 @@ export async function activate(context: ExecutionActivationContext) {
               if (isEditable) {
                 projectId = sourceProjectId;
               } else {
-                // Show info notification that resources cannot be exported
-                papi.notifications.send({
-                  message: "%flexExport_resourceNotExportable%",
-                  severity: "info",
-                });
+                // Resource panes are read-only. Surface this inline in the
+                // WebView's StatusStrip rather than as a host notification
+                // (which appears outside the panel and is easy to miss).
+                notExportableReason = "resource";
               }
             } catch {
               // If we can't check, don't auto-select the project
@@ -221,9 +262,24 @@ export async function activate(context: ExecutionActivationContext) {
       const options: ExportToFlexWebViewOptions = {
         projectId,
         initialScrRef,
+        notExportableReason,
       };
 
-      return papi.webViews.openWebView(welcomeWebViewType, undefined, { existingId: "?", ...options });
+      const openedWebViewId = await papi.webViews.openWebView(
+        welcomeWebViewType,
+        undefined,
+        { existingId: "?", ...options }
+      );
+
+      // Push the invocation context to a running panel. On first creation the
+      // component reads projectId/initialScrRef/notExportableReason from state
+      // at mount (set by the WebView provider above), so the event is a
+      // redundant signal there. On reuse the provider does not re-run, so this
+      // event is the ONLY channel that reaches the live React component —
+      // see NAVIGATION_EVENT_TYPE comment.
+      navigationContextEmitter.emit({ projectId, initialScrRef, notExportableReason });
+
+      return openedWebViewId;
     }
   );
 
@@ -282,46 +338,6 @@ export async function activate(context: ExecutionActivationContext) {
     }
   );
 
-  // Register command to preload project details in the background
-  // Call this after getting the project list to warm the cache
-  const preloadFlexProjectInfoPromise = papi.commands.registerCommand(
-    "flexExport.preloadFlexProjectInfo",
-    async (projectNames: string[]): Promise<void> => {
-      if (!flexBridge) return;
-
-      // Filter to only projects not already cached
-      const uncachedProjects = projectNames.filter(name => {
-        const cached = projectInfoCache.get(name);
-        return !cached || (Date.now() - cached.timestamp) >= CACHE_TTL_MS;
-      });
-
-      if (uncachedProjects.length === 0) {
-        logger.debug("All projects already cached");
-        return;
-      }
-
-      logger.debug(`Preloading ${uncachedProjects.length} project(s) in background`);
-
-      // Load projects sequentially to avoid overwhelming the system
-      // (Each load opens a full LCM cache which is resource-intensive)
-      for (const projectName of uncachedProjects) {
-        try {
-          const result = await flexBridge.getProjectInfo(projectName);
-          if (result.success && result.project) {
-            projectInfoCache.set(projectName, {
-              details: result.project,
-              timestamp: Date.now(),
-            });
-            logger.debug(`Preloaded project info for "${projectName}"`);
-          }
-        } catch (error) {
-          // Silently continue - preloading is best-effort
-          logger.debug(`Failed to preload "${projectName}": ${error}`);
-        }
-      }
-    }
-  );
-
   // Register command to check if text name exists and get suggested name
   const checkTextNamePromise = papi.commands.registerCommand(
     "flexExport.checkTextName",
@@ -353,22 +369,6 @@ export async function activate(context: ExecutionActivationContext) {
     }
   );
 
-  // Register command to get safe navigation target
-  const getSafeNavigationTargetPromise = papi.commands.registerCommand(
-    "flexExport.getSafeNavigationTarget",
-    async (
-      flexProjectName: string,
-      textTitle: string
-    ): Promise<{ guid?: string; tool: string }> => {
-      if (!flexBridge) {
-        return { tool: "default" };
-      }
-
-      const result = await flexBridge.getSafeNavigationTarget(flexProjectName, textTitle);
-      return result;
-    }
-  );
-
   // Register command to verify a text exists and is accessible by GUID
   const verifyTextPromise = papi.commands.registerCommand(
     "flexExport.verifyText",
@@ -389,40 +389,6 @@ export async function activate(context: ExecutionActivationContext) {
 
       const result = await flexBridge.verifyText(flexProjectName, textGuid);
       return result;
-    }
-  );
-
-  // Register command to navigate FLEx using deep link
-  const navigateFlexPromise = papi.commands.registerCommand(
-    "flexExport.navigateFlex",
-    async (deepLinkUrl: string): Promise<void> => {
-      const { createProcess } = context.elevatedPrivileges;
-      if (!createProcess) {
-        throw new Error("createProcess privilege not available");
-      }
-
-      // Use Windows cmd to open the deep link URL
-      // cmd /c start "" "url" - the empty "" is for the window title
-      return new Promise((resolve, reject) => {
-        const process = createProcess.spawn(
-          context.executionToken,
-          "cmd",
-          ["/c", "start", "", deepLinkUrl],
-          { stdio: "ignore" }
-        );
-
-        process.on("error", (err: Error) => {
-          reject(err);
-        });
-
-        process.on("close", (code: number | null) => {
-          if (code === 0 || code === null) {
-            resolve();
-          } else {
-            reject(new Error(`Process exited with code ${code}`));
-          }
-        });
-      });
     }
   );
 
@@ -460,12 +426,9 @@ export async function activate(context: ExecutionActivationContext) {
   context.registrations.add(await openExportDialogPromise);
   context.registrations.add(await listFlexProjectsPromise);
   context.registrations.add(await getFlexProjectInfoPromise);
-  context.registrations.add(await preloadFlexProjectInfoPromise);
   context.registrations.add(await checkTextNamePromise);
   context.registrations.add(await checkFlexStatusPromise);
-  context.registrations.add(await getSafeNavigationTargetPromise);
   context.registrations.add(await verifyTextPromise);
-  context.registrations.add(await navigateFlexPromise);
   context.registrations.add(await exportToFlexPromise);
 
   logger.info("flex-export extension finished activating!");

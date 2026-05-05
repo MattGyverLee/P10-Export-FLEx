@@ -13,12 +13,11 @@ export interface FlexProjectInfo {
   path: string;
   vernacularWs: string;
   analysisWs: string;
-}
-
-export interface FlexProjectDetails extends FlexProjectInfo {
   vernacularWritingSystems: WritingSystemInfo[];
   analysisWritingSystems: WritingSystemInfo[];
 }
+
+export type FlexProjectDetails = FlexProjectInfo;
 
 /**
  * Options for rendering a WebView component
@@ -103,6 +102,8 @@ export function createMockFlexProject(overrides: Partial<FlexProjectInfo> = {}):
     path: 'C:\\ProgramData\\SIL\\FieldWorks\\Projects\\TestProject',
     vernacularWs: 'en',
     analysisWs: 'en',
+    vernacularWritingSystems: [{ code: 'en', name: 'English', isDefault: true }],
+    analysisWritingSystems: [{ code: 'en', name: 'English', isDefault: true }],
     ...overrides,
   };
 }

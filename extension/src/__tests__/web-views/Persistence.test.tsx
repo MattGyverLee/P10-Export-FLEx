@@ -1,89 +1,112 @@
 /**
  * Tests for settings persistence in welcome.web-view.tsx
  *
- * Tests the WebView state persistence mechanism using flat keys
- * and per-project scoping.
+ * Mirrors the simplified two-tier persistence model used by the real WebView:
+ * - `savedX` slots are read from useWebViewState every render (so a key change
+ *   from a PT-project switch picks up that project's persisted values).
+ * - Local `useState` UI state is seeded from those saved values and mutated by
+ *   the user without touching disk.
+ * - Persisted writes happen ONLY on a successful export.
+ * - WS persistence is keyed per (PT project, FLEx project) pair.
+ * - `overwriteEnabled` is intentionally session-scoped (not persisted).
  */
 
 import { useState, useEffect } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { createMockUseWebViewState } from '../setup/test-utils';
 
-// Simulated component that mimics the persistence behavior of welcome.web-view.tsx
 interface PersistenceTestComponentProps {
   projectId: string;
-  // Use any type for the mock function to avoid complex generic type issues
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   useWebViewState: any;
+  initialFlexProject?: string;
   onSaveSettings?: () => void;
 }
 
+/**
+ * Simulated component mirroring welcome.web-view.tsx's persistence wiring.
+ * Each render reads the `saved*` slots fresh; a successful export writes them.
+ */
 function PersistenceTestComponent({
   projectId,
   useWebViewState,
+  initialFlexProject = '',
   onSaveSettings,
 }: PersistenceTestComponentProps) {
-  // Per-project settings using flat keys (matching welcome.web-view.tsx pattern)
+  // FLEx project — persisted per PT project
   const [savedFlexProjectName, setSavedFlexProjectName] = useWebViewState(
     `flexProjectName-${projectId || 'default'}`,
     ''
   );
-  const [savedWritingSystemCode, setSavedWritingSystemCode] = useWebViewState(
-    `writingSystemCode-${projectId || 'default'}`,
-    ''
-  );
-  const [includeFootnotes, setIncludeFootnotes] = useWebViewState(
+
+  // Local FLEx project selection (drives the WS persistence key)
+  const [flexProject, setFlexProject] = useState<string>(savedFlexProjectName || initialFlexProject);
+  useEffect(() => {
+    if (savedFlexProjectName) setFlexProject(savedFlexProjectName);
+  }, [savedFlexProjectName]);
+
+  // WS — keyed per (PT, FLEx) pair. Empty FLEx name means we read the empty-pair slot.
+  const wsKey = `writingSystemCode-${projectId || 'default'}-${flexProject || ''}`;
+  const [savedWritingSystemCode, setSavedWritingSystemCode] = useWebViewState(wsKey, '');
+
+  const [writingSystem, setWritingSystem] = useState<string>(savedWritingSystemCode || '');
+  useEffect(() => {
+    setWritingSystem(savedWritingSystemCode || '');
+  }, [savedWritingSystemCode]);
+
+  // Filters — persisted per PT project, written only on export success
+  const [savedIncludeFootnotes, setSavedIncludeFootnotes] = useWebViewState(
     `includeFootnotes-${projectId || 'default'}`,
     false
   );
-  const [includeCrossRefs, setIncludeCrossRefs] = useWebViewState(
+  const [savedIncludeCrossRefs, setSavedIncludeCrossRefs] = useWebViewState(
     `includeCrossRefs-${projectId || 'default'}`,
     false
   );
-  const [includeIntro, setIncludeIntro] = useWebViewState(
+  const [savedIncludeIntro, setSavedIncludeIntro] = useWebViewState(
     `includeIntro-${projectId || 'default'}`,
     false
   );
-  const [includeRemarks, setIncludeRemarks] = useWebViewState(
+  const [savedIncludeRemarks, setSavedIncludeRemarks] = useWebViewState(
     `includeRemarks-${projectId || 'default'}`,
     false
   );
-  const [includeFigures, setIncludeFigures] = useWebViewState(
+  const [savedIncludeFigures, setSavedIncludeFigures] = useWebViewState(
     `includeFigures-${projectId || 'default'}`,
     true
   );
-  // Global setting (no projectId suffix)
-  const [overwriteEnabled, setOverwriteEnabled] = useWebViewState(
-    'overwriteEnabled',
-    false
-  );
 
-  // Local state for form inputs
-  const [flexProject, setFlexProject] = useState(savedFlexProjectName);
-  const [writingSystem, setWritingSystem] = useState(savedWritingSystemCode);
+  const [includeFootnotes, setIncludeFootnotes] = useState<boolean>(savedIncludeFootnotes);
+  const [includeCrossRefs, setIncludeCrossRefs] = useState<boolean>(savedIncludeCrossRefs);
+  const [includeIntro, setIncludeIntro] = useState<boolean>(savedIncludeIntro);
+  const [includeRemarks, setIncludeRemarks] = useState<boolean>(savedIncludeRemarks);
+  const [includeFigures, setIncludeFigures] = useState<boolean>(savedIncludeFigures);
 
-  // Update local state when saved values change (restoration)
-  useEffect(() => {
-    if (savedFlexProjectName) {
-      setFlexProject(savedFlexProjectName);
-    }
-  }, [savedFlexProjectName]);
+  useEffect(() => { setIncludeFootnotes(savedIncludeFootnotes); }, [savedIncludeFootnotes]);
+  useEffect(() => { setIncludeCrossRefs(savedIncludeCrossRefs); }, [savedIncludeCrossRefs]);
+  useEffect(() => { setIncludeIntro(savedIncludeIntro); }, [savedIncludeIntro]);
+  useEffect(() => { setIncludeRemarks(savedIncludeRemarks); }, [savedIncludeRemarks]);
+  useEffect(() => { setIncludeFigures(savedIncludeFigures); }, [savedIncludeFigures]);
 
-  useEffect(() => {
-    if (savedWritingSystemCode) {
-      setWritingSystem(savedWritingSystemCode);
-    }
-  }, [savedWritingSystemCode]);
+  // Overwrite — session-scoped, NOT persisted
+  const [overwriteEnabled, setOverwriteEnabled] = useState<boolean>(false);
 
-  // Simulate export start that saves settings (settings are now saved at export start, not after success)
-  const handleExportStart = () => {
+  // A successful export writes all persisted slots. Failures must NOT write.
+  const handleExportSuccess = () => {
     setSavedFlexProjectName(flexProject);
     setSavedWritingSystemCode(writingSystem);
-    // Checkboxes are already using WebView state directly
+    setSavedIncludeFootnotes(includeFootnotes);
+    setSavedIncludeCrossRefs(includeCrossRefs);
+    setSavedIncludeIntro(includeIntro);
+    setSavedIncludeRemarks(includeRemarks);
+    setSavedIncludeFigures(includeFigures);
     onSaveSettings?.();
   };
 
-  // Auto-heal: reset invalid saved values
+  const handleExportFailure = () => {
+    // Intentional no-op — failure must not persist anything
+  };
+
   const handleAutoHeal = (validProjects: string[], validWsCodes: string[]) => {
     if (savedFlexProjectName && !validProjects.includes(savedFlexProjectName)) {
       setSavedFlexProjectName('');
@@ -98,6 +121,9 @@ function PersistenceTestComponent({
       <div data-testid="project-id">{projectId}</div>
       <div data-testid="saved-flex-project">{savedFlexProjectName}</div>
       <div data-testid="saved-writing-system">{savedWritingSystemCode}</div>
+      <div data-testid="ws-key">{wsKey}</div>
+      <div data-testid="saved-footnotes">{String(savedIncludeFootnotes)}</div>
+      <div data-testid="saved-crossrefs">{String(savedIncludeCrossRefs)}</div>
 
       <input
         data-testid="flex-project-input"
@@ -111,70 +137,46 @@ function PersistenceTestComponent({
         onChange={(e) => setWritingSystem(e.target.value)}
       />
 
-      <label>
-        <input
-          type="checkbox"
-          data-testid="footnotes-checkbox"
-          checked={includeFootnotes}
-          onChange={(e) => setIncludeFootnotes(e.target.checked)}
-        />
-        Include Footnotes
-      </label>
+      <input
+        type="checkbox"
+        data-testid="footnotes-checkbox"
+        checked={includeFootnotes}
+        onChange={(e) => setIncludeFootnotes(e.target.checked)}
+      />
+      <input
+        type="checkbox"
+        data-testid="crossrefs-checkbox"
+        checked={includeCrossRefs}
+        onChange={(e) => setIncludeCrossRefs(e.target.checked)}
+      />
+      <input
+        type="checkbox"
+        data-testid="intro-checkbox"
+        checked={includeIntro}
+        onChange={(e) => setIncludeIntro(e.target.checked)}
+      />
+      <input
+        type="checkbox"
+        data-testid="remarks-checkbox"
+        checked={includeRemarks}
+        onChange={(e) => setIncludeRemarks(e.target.checked)}
+      />
+      <input
+        type="checkbox"
+        data-testid="figures-checkbox"
+        checked={includeFigures}
+        onChange={(e) => setIncludeFigures(e.target.checked)}
+      />
+      <input
+        type="checkbox"
+        role="switch"
+        data-testid="overwrite-toggle"
+        checked={overwriteEnabled}
+        onChange={(e) => setOverwriteEnabled(e.target.checked)}
+      />
 
-      <label>
-        <input
-          type="checkbox"
-          data-testid="crossrefs-checkbox"
-          checked={includeCrossRefs}
-          onChange={(e) => setIncludeCrossRefs(e.target.checked)}
-        />
-        Include Cross-Refs
-      </label>
-
-      <label>
-        <input
-          type="checkbox"
-          data-testid="intro-checkbox"
-          checked={includeIntro}
-          onChange={(e) => setIncludeIntro(e.target.checked)}
-        />
-        Include Introduction
-      </label>
-
-      <label>
-        <input
-          type="checkbox"
-          data-testid="remarks-checkbox"
-          checked={includeRemarks}
-          onChange={(e) => setIncludeRemarks(e.target.checked)}
-        />
-        Include Remarks
-      </label>
-
-      <label>
-        <input
-          type="checkbox"
-          data-testid="figures-checkbox"
-          checked={includeFigures}
-          onChange={(e) => setIncludeFigures(e.target.checked)}
-        />
-        Include Figures
-      </label>
-
-      <label>
-        <input
-          type="checkbox"
-          role="switch"
-          data-testid="overwrite-toggle"
-          checked={overwriteEnabled}
-          onChange={(e) => setOverwriteEnabled(e.target.checked)}
-        />
-        Overwrite Enabled
-      </label>
-
-      <button data-testid="export-button" onClick={handleExportStart}>
-        Export
-      </button>
+      <button data-testid="export-success" onClick={handleExportSuccess}>Export (success)</button>
+      <button data-testid="export-failure" onClick={handleExportFailure}>Export (failure)</button>
       <button data-testid="auto-heal-button" onClick={() => handleAutoHeal(['ProjectA', 'ProjectB'], ['en', 'es'])}>
         Auto-Heal
       </button>
@@ -184,113 +186,138 @@ function PersistenceTestComponent({
 
 describe('Settings Persistence', () => {
   describe('WebView State Key Format', () => {
-    it('uses flat key format with projectId suffix', () => {
+    it('FLEx project is keyed per PT project', () => {
       const mockUseWebViewState = createMockUseWebViewState();
-      const projectId = 'test-project-123';
-
       render(
-        <PersistenceTestComponent projectId={projectId} useWebViewState={mockUseWebViewState} />
+        <PersistenceTestComponent projectId="test-project-123" useWebViewState={mockUseWebViewState} />
       );
+      expect(mockUseWebViewState).toHaveBeenCalledWith('flexProjectName-test-project-123', '');
+    });
 
-      // Verify the hook was called with correct key format
-      expect(mockUseWebViewState).toHaveBeenCalledWith(
-        `flexProjectName-${projectId}`,
-        ''
+    it('WS is keyed per (PT project, FLEx project) pair', () => {
+      const mockUseWebViewState = createMockUseWebViewState();
+      render(
+        <PersistenceTestComponent
+          projectId="test-project"
+          useWebViewState={mockUseWebViewState}
+          initialFlexProject="MyFlex"
+        />
       );
-      expect(mockUseWebViewState).toHaveBeenCalledWith(
-        `writingSystemCode-${projectId}`,
-        ''
-      );
-      expect(mockUseWebViewState).toHaveBeenCalledWith(
-        `includeFootnotes-${projectId}`,
-        false
-      );
+      expect(mockUseWebViewState).toHaveBeenCalledWith('writingSystemCode-test-project-MyFlex', '');
+    });
+
+    it('WS key updates when FLEx project changes mid-session', async () => {
+      const mockUseWebViewState = createMockUseWebViewState();
+      render(<PersistenceTestComponent projectId="ptp" useWebViewState={mockUseWebViewState} />);
+
+      fireEvent.change(screen.getByTestId('flex-project-input'), { target: { value: 'FlexA' } });
+      await waitFor(() => {
+        expect(screen.getByTestId('ws-key')).toHaveTextContent('writingSystemCode-ptp-FlexA');
+      });
+
+      fireEvent.change(screen.getByTestId('flex-project-input'), { target: { value: 'FlexB' } });
+      await waitFor(() => {
+        expect(screen.getByTestId('ws-key')).toHaveTextContent('writingSystemCode-ptp-FlexB');
+      });
     });
 
     it('uses "default" suffix when projectId is empty', () => {
       const mockUseWebViewState = createMockUseWebViewState();
-
       render(<PersistenceTestComponent projectId="" useWebViewState={mockUseWebViewState} />);
-
       expect(mockUseWebViewState).toHaveBeenCalledWith('flexProjectName-default', '');
-      expect(mockUseWebViewState).toHaveBeenCalledWith('writingSystemCode-default', '');
     });
 
-    it('overwrite toggle is global (no projectId suffix)', () => {
+    it('overwriteEnabled is NOT persisted (session-scoped)', () => {
       const mockUseWebViewState = createMockUseWebViewState();
+      render(<PersistenceTestComponent projectId="any" useWebViewState={mockUseWebViewState} />);
+      // No useWebViewState call should have occurred for overwriteEnabled
+      const calls = mockUseWebViewState.mock.calls.map((c: unknown[]) => c[0]);
+      expect(calls).not.toContain('overwriteEnabled');
+    });
+  });
 
+  describe('Save only on export success', () => {
+    it('toggling a filter without exporting does NOT write to disk', () => {
+      const mockUseWebViewState = createMockUseWebViewState();
       render(
-        <PersistenceTestComponent projectId="any-project" useWebViewState={mockUseWebViewState} />
+        <PersistenceTestComponent projectId="ptp" useWebViewState={mockUseWebViewState} />
       );
 
-      expect(mockUseWebViewState).toHaveBeenCalledWith('overwriteEnabled', false);
+      fireEvent.click(screen.getByTestId('footnotes-checkbox'));
+      expect(screen.getByTestId('footnotes-checkbox')).toBeChecked();
+      // Saved value remains the default (false) — local toggle did not persist
+      expect(screen.getByTestId('saved-footnotes')).toHaveTextContent('false');
+    });
+
+    it('a successful export writes all persisted slots', () => {
+      const mockUseWebViewState = createMockUseWebViewState();
+      const onSaveSettings = jest.fn();
+      render(
+        <PersistenceTestComponent
+          projectId="ptp"
+          useWebViewState={mockUseWebViewState}
+          onSaveSettings={onSaveSettings}
+        />
+      );
+
+      fireEvent.change(screen.getByTestId('flex-project-input'), { target: { value: 'MyFlex' } });
+      fireEvent.change(screen.getByTestId('writing-system-input'), { target: { value: 'en' } });
+      fireEvent.click(screen.getByTestId('footnotes-checkbox'));
+      fireEvent.click(screen.getByTestId('export-success'));
+
+      expect(onSaveSettings).toHaveBeenCalled();
+      expect(screen.getByTestId('saved-flex-project')).toHaveTextContent('MyFlex');
+      expect(screen.getByTestId('saved-writing-system')).toHaveTextContent('en');
+      expect(screen.getByTestId('saved-footnotes')).toHaveTextContent('true');
+    });
+
+    it('an export failure writes NOTHING', () => {
+      const mockUseWebViewState = createMockUseWebViewState();
+      render(
+        <PersistenceTestComponent projectId="ptp" useWebViewState={mockUseWebViewState} />
+      );
+
+      fireEvent.change(screen.getByTestId('flex-project-input'), { target: { value: 'WillNotPersist' } });
+      fireEvent.click(screen.getByTestId('footnotes-checkbox'));
+      fireEvent.click(screen.getByTestId('export-failure'));
+
+      expect(screen.getByTestId('saved-flex-project')).toHaveTextContent('');
+      expect(screen.getByTestId('saved-footnotes')).toHaveTextContent('false');
     });
   });
 
   describe('Settings Restoration', () => {
-    it('restores FLEx project from WebView state', async () => {
+    it('seeds local FLEx project from saved value', async () => {
       const mockUseWebViewState = createMockUseWebViewState();
-      const projectId = 'test-project';
+      const projectId = 'ptp';
 
-      // First render to initialize state
       const { rerender } = render(
         <PersistenceTestComponent projectId={projectId} useWebViewState={mockUseWebViewState} />
       );
 
-      // Simulate entering and saving a FLEx project
-      fireEvent.change(screen.getByTestId('flex-project-input'), {
-        target: { value: 'MyFlexProject' },
-      });
-      fireEvent.click(screen.getByTestId('export-button'));
+      fireEvent.change(screen.getByTestId('flex-project-input'), { target: { value: 'MyFlex' } });
+      fireEvent.click(screen.getByTestId('export-success'));
 
-      // Rerender to simulate reopening the dialog
-      rerender(
-        <PersistenceTestComponent projectId={projectId} useWebViewState={mockUseWebViewState} />
-      );
+      rerender(<PersistenceTestComponent projectId={projectId} useWebViewState={mockUseWebViewState} />);
 
       await waitFor(() => {
-        expect(screen.getByTestId('saved-flex-project')).toHaveTextContent('MyFlexProject');
+        expect(screen.getByTestId('saved-flex-project')).toHaveTextContent('MyFlex');
       });
     });
 
-    it('restores writing system from WebView state', async () => {
+    it('seeds local checkbox states from saved values', async () => {
       const mockUseWebViewState = createMockUseWebViewState();
-      const projectId = 'test-project';
+      const projectId = 'ptp';
 
       const { rerender } = render(
         <PersistenceTestComponent projectId={projectId} useWebViewState={mockUseWebViewState} />
       );
 
-      fireEvent.change(screen.getByTestId('writing-system-input'), {
-        target: { value: 'es' },
-      });
-      fireEvent.click(screen.getByTestId('export-button'));
-
-      rerender(
-        <PersistenceTestComponent projectId={projectId} useWebViewState={mockUseWebViewState} />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByTestId('saved-writing-system')).toHaveTextContent('es');
-      });
-    });
-
-    it('restores checkbox states from WebView state', async () => {
-      const mockUseWebViewState = createMockUseWebViewState();
-      const projectId = 'test-project';
-
-      const { rerender } = render(
-        <PersistenceTestComponent projectId={projectId} useWebViewState={mockUseWebViewState} />
-      );
-
-      // Toggle checkboxes
       fireEvent.click(screen.getByTestId('footnotes-checkbox'));
       fireEvent.click(screen.getByTestId('crossrefs-checkbox'));
+      fireEvent.click(screen.getByTestId('export-success'));
 
-      // Rerender
-      rerender(
-        <PersistenceTestComponent projectId={projectId} useWebViewState={mockUseWebViewState} />
-      );
+      rerender(<PersistenceTestComponent projectId={projectId} useWebViewState={mockUseWebViewState} />);
 
       await waitFor(() => {
         expect(screen.getByTestId('footnotes-checkbox')).toBeChecked();
@@ -299,200 +326,110 @@ describe('Settings Persistence', () => {
     });
   });
 
-  describe('Settings Save At Export Start', () => {
-    it('saves FLEx project and writing system when export starts', () => {
-      const mockUseWebViewState = createMockUseWebViewState();
-      const onSaveSettings = jest.fn();
-
-      render(
-        <PersistenceTestComponent
-          projectId="test-project"
-          useWebViewState={mockUseWebViewState}
-          onSaveSettings={onSaveSettings}
-        />
-      );
-
-      fireEvent.change(screen.getByTestId('flex-project-input'), {
-        target: { value: 'SavedProject' },
-      });
-      fireEvent.change(screen.getByTestId('writing-system-input'), {
-        target: { value: 'en' },
-      });
-
-      fireEvent.click(screen.getByTestId('export-button'));
-
-      expect(onSaveSettings).toHaveBeenCalled();
-      expect(screen.getByTestId('saved-flex-project')).toHaveTextContent('SavedProject');
-      expect(screen.getByTestId('saved-writing-system')).toHaveTextContent('en');
-    });
-
-    it('checkbox states are saved via WebView state directly', () => {
-      const mockUseWebViewState = createMockUseWebViewState();
-
-      render(
-        <PersistenceTestComponent projectId="test-project" useWebViewState={mockUseWebViewState} />
-      );
-
-      // Checkboxes use WebView state directly, so they're saved on change
-      fireEvent.click(screen.getByTestId('footnotes-checkbox'));
-
-      // The state should be updated immediately
-      expect(screen.getByTestId('footnotes-checkbox')).toBeChecked();
-    });
-  });
-
   describe('Per-Project Scoping', () => {
-    it('different projects have separate settings', async () => {
+    it('different PT projects have separate filter slots', async () => {
       const mockUseWebViewState = createMockUseWebViewState();
 
-      // Set settings for project A
       const { rerender } = render(
         <PersistenceTestComponent projectId="project-A" useWebViewState={mockUseWebViewState} />
       );
 
-      fireEvent.change(screen.getByTestId('flex-project-input'), {
-        target: { value: 'FlexForProjectA' },
-      });
-      fireEvent.click(screen.getByTestId('export-button'));
+      fireEvent.change(screen.getByTestId('flex-project-input'), { target: { value: 'FlexForA' } });
+      fireEvent.click(screen.getByTestId('export-success'));
 
-      // Switch to project B
       rerender(
         <PersistenceTestComponent projectId="project-B" useWebViewState={mockUseWebViewState} />
       );
 
-      // Project B should have empty/default values
       await waitFor(() => {
         expect(screen.getByTestId('saved-flex-project')).toHaveTextContent('');
       });
 
-      // Set settings for project B
-      fireEvent.change(screen.getByTestId('flex-project-input'), {
-        target: { value: 'FlexForProjectB' },
-      });
-      fireEvent.click(screen.getByTestId('export-button'));
+      fireEvent.change(screen.getByTestId('flex-project-input'), { target: { value: 'FlexForB' } });
+      fireEvent.click(screen.getByTestId('export-success'));
 
-      // Switch back to project A
       rerender(
         <PersistenceTestComponent projectId="project-A" useWebViewState={mockUseWebViewState} />
       );
 
-      // Project A should still have its original settings
       await waitFor(() => {
-        expect(screen.getByTestId('saved-flex-project')).toHaveTextContent('FlexForProjectA');
+        expect(screen.getByTestId('saved-flex-project')).toHaveTextContent('FlexForA');
       });
     });
 
-    it('overwrite toggle is shared across projects', async () => {
+    it('each (PT, FLEx) pair persists its own WS independently', async () => {
       const mockUseWebViewState = createMockUseWebViewState();
 
-      // Enable overwrite for project A
-      const { rerender } = render(
-        <PersistenceTestComponent projectId="project-A" useWebViewState={mockUseWebViewState} />
-      );
+      render(<PersistenceTestComponent projectId="ptp" useWebViewState={mockUseWebViewState} />);
 
-      fireEvent.click(screen.getByTestId('overwrite-toggle'));
-      expect(screen.getByTestId('overwrite-toggle')).toBeChecked();
+      // (ptp, FlexA) → en
+      fireEvent.change(screen.getByTestId('flex-project-input'), { target: { value: 'FlexA' } });
+      fireEvent.change(screen.getByTestId('writing-system-input'), { target: { value: 'en' } });
+      fireEvent.click(screen.getByTestId('export-success'));
 
-      // Switch to project B
-      rerender(
-        <PersistenceTestComponent projectId="project-B" useWebViewState={mockUseWebViewState} />
-      );
-
-      // Overwrite should still be enabled (global setting)
+      // (ptp, FlexB) → es
+      fireEvent.change(screen.getByTestId('flex-project-input'), { target: { value: 'FlexB' } });
+      // Saved WS for (ptp, FlexB) is empty initially
       await waitFor(() => {
-        expect(screen.getByTestId('overwrite-toggle')).toBeChecked();
+        expect(screen.getByTestId('saved-writing-system')).toHaveTextContent('');
+      });
+      fireEvent.change(screen.getByTestId('writing-system-input'), { target: { value: 'es' } });
+      fireEvent.click(screen.getByTestId('export-success'));
+      await waitFor(() => {
+        expect(screen.getByTestId('saved-writing-system')).toHaveTextContent('es');
+      });
+
+      // Switch back to FlexA — should restore en, not es
+      fireEvent.change(screen.getByTestId('flex-project-input'), { target: { value: 'FlexA' } });
+      await waitFor(() => {
+        expect(screen.getByTestId('saved-writing-system')).toHaveTextContent('en');
       });
     });
   });
 
-  describe('Default Values', () => {
-    it('uses empty string for FLEx project by default', () => {
+  describe('Defaults', () => {
+    it('FLEx project defaults to empty string', () => {
       const mockUseWebViewState = createMockUseWebViewState();
-
-      render(
-        <PersistenceTestComponent projectId="new-project" useWebViewState={mockUseWebViewState} />
-      );
-
+      render(<PersistenceTestComponent projectId="new" useWebViewState={mockUseWebViewState} />);
       expect(screen.getByTestId('saved-flex-project')).toHaveTextContent('');
     });
 
-    it('uses empty string for writing system by default', () => {
+    it('most filters default to false; figures defaults to true', () => {
       const mockUseWebViewState = createMockUseWebViewState();
-
-      render(
-        <PersistenceTestComponent projectId="new-project" useWebViewState={mockUseWebViewState} />
-      );
-
-      expect(screen.getByTestId('saved-writing-system')).toHaveTextContent('');
-    });
-
-    it('uses false for most checkboxes by default', () => {
-      const mockUseWebViewState = createMockUseWebViewState();
-
-      render(
-        <PersistenceTestComponent projectId="new-project" useWebViewState={mockUseWebViewState} />
-      );
-
+      render(<PersistenceTestComponent projectId="new" useWebViewState={mockUseWebViewState} />);
       expect(screen.getByTestId('footnotes-checkbox')).not.toBeChecked();
       expect(screen.getByTestId('crossrefs-checkbox')).not.toBeChecked();
       expect(screen.getByTestId('intro-checkbox')).not.toBeChecked();
       expect(screen.getByTestId('remarks-checkbox')).not.toBeChecked();
-      expect(screen.getByTestId('overwrite-toggle')).not.toBeChecked();
-    });
-
-    it('uses true for includeFigures by default', () => {
-      const mockUseWebViewState = createMockUseWebViewState();
-
-      render(
-        <PersistenceTestComponent projectId="new-project" useWebViewState={mockUseWebViewState} />
-      );
-
       expect(screen.getByTestId('figures-checkbox')).toBeChecked();
+      expect(screen.getByTestId('overwrite-toggle')).not.toBeChecked();
     });
   });
 
   describe('Auto-Heal', () => {
-    it('resets FLEx project name when saved project is not in valid list', async () => {
+    it('clears saved FLEx project when its target no longer exists', async () => {
       const mockUseWebViewState = createMockUseWebViewState();
+      render(<PersistenceTestComponent projectId="ptp" useWebViewState={mockUseWebViewState} />);
 
-      render(
-        <PersistenceTestComponent projectId="test-project" useWebViewState={mockUseWebViewState} />
-      );
-
-      // Save a project name
-      fireEvent.change(screen.getByTestId('flex-project-input'), {
-        target: { value: 'DeletedProject' },
-      });
-      fireEvent.click(screen.getByTestId('export-button'));
-
+      fireEvent.change(screen.getByTestId('flex-project-input'), { target: { value: 'DeletedProject' } });
+      fireEvent.click(screen.getByTestId('export-success'));
       expect(screen.getByTestId('saved-flex-project')).toHaveTextContent('DeletedProject');
 
-      // Trigger auto-heal with valid projects that don't include 'DeletedProject'
       fireEvent.click(screen.getByTestId('auto-heal-button'));
-
       await waitFor(() => {
         expect(screen.getByTestId('saved-flex-project')).toHaveTextContent('');
       });
     });
 
-    it('resets writing system when saved WS is not in valid list', async () => {
+    it('clears saved WS when its code is no longer in the FLEx project', async () => {
       const mockUseWebViewState = createMockUseWebViewState();
+      render(<PersistenceTestComponent projectId="ptp" useWebViewState={mockUseWebViewState} />);
 
-      render(
-        <PersistenceTestComponent projectId="test-project" useWebViewState={mockUseWebViewState} />
-      );
+      fireEvent.change(screen.getByTestId('flex-project-input'), { target: { value: 'ProjectA' } });
+      fireEvent.change(screen.getByTestId('writing-system-input'), { target: { value: 'xyz' } });
+      fireEvent.click(screen.getByTestId('export-success'));
 
-      // Save a writing system
-      fireEvent.change(screen.getByTestId('writing-system-input'), {
-        target: { value: 'xyz' },
-      });
-      fireEvent.click(screen.getByTestId('export-button'));
-
-      expect(screen.getByTestId('saved-writing-system')).toHaveTextContent('xyz');
-
-      // Trigger auto-heal with valid WS codes that don't include 'xyz'
       fireEvent.click(screen.getByTestId('auto-heal-button'));
-
       await waitFor(() => {
         expect(screen.getByTestId('saved-writing-system')).toHaveTextContent('');
       });
@@ -500,56 +437,19 @@ describe('Settings Persistence', () => {
 
     it('keeps valid settings intact when healing invalid ones', async () => {
       const mockUseWebViewState = createMockUseWebViewState();
+      render(<PersistenceTestComponent projectId="ptp" useWebViewState={mockUseWebViewState} />);
 
-      render(
-        <PersistenceTestComponent projectId="test-project" useWebViewState={mockUseWebViewState} />
-      );
-
-      // Save settings: valid project, invalid WS, checked footnotes
-      fireEvent.change(screen.getByTestId('flex-project-input'), {
-        target: { value: 'ProjectA' },
-      });
-      fireEvent.change(screen.getByTestId('writing-system-input'), {
-        target: { value: 'xyz' },
-      });
+      fireEvent.change(screen.getByTestId('flex-project-input'), { target: { value: 'ProjectA' } });
+      fireEvent.change(screen.getByTestId('writing-system-input'), { target: { value: 'xyz' } });
       fireEvent.click(screen.getByTestId('footnotes-checkbox'));
-      fireEvent.click(screen.getByTestId('export-button'));
+      fireEvent.click(screen.getByTestId('export-success'));
 
-      // Auto-heal: ProjectA is valid, xyz is not
       fireEvent.click(screen.getByTestId('auto-heal-button'));
 
       await waitFor(() => {
-        // Project should be kept (it's in the valid list)
         expect(screen.getByTestId('saved-flex-project')).toHaveTextContent('ProjectA');
-        // WS should be reset (not in valid list)
         expect(screen.getByTestId('saved-writing-system')).toHaveTextContent('');
-        // Checkbox should be unchanged
         expect(screen.getByTestId('footnotes-checkbox')).toBeChecked();
-      });
-    });
-
-    it('does not reset values that are in the valid list', async () => {
-      const mockUseWebViewState = createMockUseWebViewState();
-
-      render(
-        <PersistenceTestComponent projectId="test-project" useWebViewState={mockUseWebViewState} />
-      );
-
-      // Save valid settings
-      fireEvent.change(screen.getByTestId('flex-project-input'), {
-        target: { value: 'ProjectB' },
-      });
-      fireEvent.change(screen.getByTestId('writing-system-input'), {
-        target: { value: 'en' },
-      });
-      fireEvent.click(screen.getByTestId('export-button'));
-
-      // Auto-heal: both are in the valid lists
-      fireEvent.click(screen.getByTestId('auto-heal-button'));
-
-      await waitFor(() => {
-        expect(screen.getByTestId('saved-flex-project')).toHaveTextContent('ProjectB');
-        expect(screen.getByTestId('saved-writing-system')).toHaveTextContent('en');
       });
     });
   });

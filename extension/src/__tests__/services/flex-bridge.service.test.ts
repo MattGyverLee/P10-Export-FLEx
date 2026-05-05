@@ -31,12 +31,11 @@ interface FlexProjectInfo {
   path: string;
   vernacularWs: string;
   analysisWs: string;
-}
-
-interface FlexProjectDetails extends FlexProjectInfo {
   vernacularWritingSystems: WritingSystemInfo[];
   analysisWritingSystems: WritingSystemInfo[];
 }
+
+type FlexProjectDetails = FlexProjectInfo;
 
 interface ListProjectsResult {
   success: boolean;
@@ -219,28 +218,6 @@ class FlexBridgeService {
     }
   }
 
-  async getSafeNavigationTarget(
-    projectName: string,
-    textTitle: string
-  ): Promise<{ guid?: string; tool: string }> {
-    try {
-      const args = ['--get-safe-target', '--project', projectName, '--title', textTitle];
-      const output = await this.runBridge(args);
-      const result = JSON.parse(output) as { success: boolean; guid?: string; tool: string };
-
-      if (result.success) {
-        return {
-          guid: result.guid,
-          tool: result.tool,
-        };
-      }
-
-      return { tool: 'default' };
-    } catch {
-      return { tool: 'default' };
-    }
-  }
-
   private runBridge(args: string[], stdin?: string): Promise<string> {
     return new Promise((resolve, reject) => {
       let stdout = '';
@@ -400,6 +377,12 @@ describe('FlexBridgeService', () => {
             path: 'C:\\Projects\\TestProject',
             vernacularWs: 'en',
             analysisWs: 'en',
+            vernacularWritingSystems: [
+              { code: 'en', name: 'English', isDefault: true },
+            ],
+            analysisWritingSystems: [
+              { code: 'en', name: 'English', isDefault: true },
+            ],
           },
         ],
       };
@@ -744,44 +727,4 @@ describe('FlexBridgeService', () => {
     });
   });
 
-  describe('getSafeNavigationTarget', () => {
-    it('returns guid and tool for redirect workflow', async () => {
-      const mockResponse = {
-        success: true,
-        guid: 'abc-123-def',
-        tool: 'textsWords',
-      };
-
-      mockCreateProcess.spawn.mockReturnValue(
-        createMockProcess(0, JSON.stringify(mockResponse))
-      );
-
-      const result = await service.getSafeNavigationTarget('TestProject', 'Genesis 1');
-
-      expect(result.guid).toBe('abc-123-def');
-      expect(result.tool).toBe('textsWords');
-    });
-
-    it('returns default tool on error', async () => {
-      const mockProcess = new EventEmitter() as EventEmitter & {
-        stdout: EventEmitter;
-        stderr: EventEmitter;
-        stdin: { write: jest.Mock; end: jest.Mock };
-      };
-      mockProcess.stdout = new EventEmitter();
-      mockProcess.stderr = new EventEmitter();
-      mockProcess.stdin = { write: jest.fn(), end: jest.fn() };
-
-      setTimeout(() => {
-        mockProcess.emit('error', new Error('Failed'));
-      }, 0);
-
-      mockCreateProcess.spawn.mockReturnValue(mockProcess);
-
-      const result = await service.getSafeNavigationTarget('TestProject', 'Text');
-
-      expect(result.guid).toBeUndefined();
-      expect(result.tool).toBe('default');
-    });
-  });
 });

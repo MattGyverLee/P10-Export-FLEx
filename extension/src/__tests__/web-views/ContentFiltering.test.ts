@@ -7,7 +7,14 @@
 
 // Re-implement helper functions from welcome.web-view.tsx for testing
 const isIntroMarker = (marker: string): boolean => {
-  return /^(imt\d?|is\d?|ip|ipi|im|imi|ipq|imq|ipr|iq\d?|ib|ili\d?|iot|io\d?|iex|ie)$/.test(marker);
+  // Includes main title markers (mt, mt1...) per FLExTrans convention.
+  return /^(imt\d?|is\d?|ip|ipi|im|imi|ipq|imq|ipr|iq\d?|ib|ili\d?|iot|io\d?|iex|ie|mt\d?)$/.test(marker);
+};
+
+// Book header markers: \h, \h1-3, \toc1-3, \toca1-3 — translatable content,
+// gated on the includeBookHeaders toggle. Issue #15.
+const isBookHeaderMarker = (marker: string): boolean => {
+  return /^(h\d?|toc\d|toca\d?)$/.test(marker);
 };
 
 const isRemarkMarker = (marker: string): boolean => {
@@ -42,14 +49,19 @@ function filterUsjContent(
     includeIntro: boolean;
     includeRemarks: boolean;
     includeFigures: boolean;
+    includeBookHeaders: boolean;
   }
 ): (UsjNode | string)[] {
-  const { includeFootnotes, includeCrossRefs, includeIntro, includeRemarks, includeFigures } = options;
+  const { includeFootnotes, includeCrossRefs, includeIntro, includeRemarks, includeFigures, includeBookHeaders } = options;
 
   return content
     .filter((item) => {
       if (typeof item === 'string') return true;
       const node = item as UsjNode;
+
+      // The book identification node (\id) is always preserved — USFM requires
+      // it and the bridge tags it as analysis. Issue #15.
+      if (node.type === 'book') return true;
 
       // Filter notes (footnotes and cross-references)
       if (node.type === 'note') {
@@ -57,8 +69,10 @@ function filterUsjContent(
         if (isCrossRefMarker(node.marker || '') && !includeCrossRefs) return false;
       }
 
-      // Filter intro paragraphs (only in first chapter)
       if (node.type === 'para' && node.marker) {
+        // Drop \h and \toc* only when Book Headers is unchecked. Issue #15.
+        if (!includeBookHeaders && isFirstChapter && isBookHeaderMarker(node.marker)) return false;
+        // Filter intro/title markers (only in first chapter)
         if (!includeIntro && isFirstChapter && isIntroMarker(node.marker)) return false;
         if (!includeCrossRefs && node.marker === 'r') return false;
         if (!includeRemarks && isRemarkMarker(node.marker)) return false;
@@ -114,14 +128,40 @@ describe('Content Filtering', () => {
       expect(isIntroMarker('ie')).toBe(true);
     });
 
+    it('identifies main title markers as intro (FLExTrans convention)', () => {
+      expect(isIntroMarker('mt')).toBe(true);
+      expect(isIntroMarker('mt1')).toBe(true);
+      expect(isIntroMarker('mt2')).toBe(true);
+    });
+
     it('rejects non-intro markers', () => {
       expect(isIntroMarker('p')).toBe(false);
       expect(isIntroMarker('v')).toBe(false);
       expect(isIntroMarker('c')).toBe(false);
       expect(isIntroMarker('s')).toBe(false);
-      expect(isIntroMarker('mt')).toBe(false);
       expect(isIntroMarker('h')).toBe(false);
-      expect(isIntroMarker('toc')).toBe(false);
+      expect(isIntroMarker('toc1')).toBe(false);
+    });
+  });
+
+  describe('isBookHeaderMarker', () => {
+    it('identifies running header marker', () => {
+      expect(isBookHeaderMarker('h')).toBe(true);
+      expect(isBookHeaderMarker('h1')).toBe(true);
+    });
+
+    it('identifies toc markers', () => {
+      expect(isBookHeaderMarker('toc1')).toBe(true);
+      expect(isBookHeaderMarker('toc2')).toBe(true);
+      expect(isBookHeaderMarker('toc3')).toBe(true);
+      expect(isBookHeaderMarker('toca1')).toBe(true);
+    });
+
+    it('rejects non-header markers', () => {
+      expect(isBookHeaderMarker('p')).toBe(false);
+      expect(isBookHeaderMarker('mt')).toBe(false);
+      expect(isBookHeaderMarker('id')).toBe(false);
+      expect(isBookHeaderMarker('toc')).toBe(false);
     });
   });
 
@@ -172,6 +212,7 @@ describe('Content Filtering', () => {
       includeIntro: true,
       includeRemarks: true,
       includeFigures: true,
+      includeBookHeaders: true,
     };
 
     describe('footnotes filtering', () => {
@@ -264,8 +305,18 @@ describe('Content Filtering', () => {
       });
     });
 
+    // \mt1 follows the introduction toggle (FLExTrans convention starts at \c 1
+    // when intro is excluded). Other book-related behaviours have their own
+    // describe blocks below: "book identification" for \id and "book-header
+    // filtering" for \h / \toc*.
+
     describe('introduction filtering', () => {
       const contentWithIntro: (UsjNode | string)[] = [
+        {
+          type: 'para',
+          marker: 'mt1',
+          content: ['The Book of Genesis'],
+        },
         {
           type: 'para',
           marker: 'imt',
@@ -288,18 +339,19 @@ describe('Content Filtering', () => {
         },
       ];
 
-      it('keeps intro paragraphs when includeIntro is true', () => {
+      it('keeps intro and title paragraphs when includeIntro is true', () => {
         const result = filterUsjContent(contentWithIntro, true, {
           ...defaultOptions,
           includeIntro: true,
         });
 
-        expect(result).toHaveLength(4);
-        expect(result[0]).toHaveProperty('marker', 'imt');
-        expect(result[1]).toHaveProperty('marker', 'ip');
+        expect(result).toHaveLength(5);
+        expect(result[0]).toHaveProperty('marker', 'mt1');
+        expect(result[1]).toHaveProperty('marker', 'imt');
+        expect(result[2]).toHaveProperty('marker', 'ip');
       });
 
-      it('removes intro paragraphs in first chapter when includeIntro is false', () => {
+      it('removes intro and title paragraphs in first chapter when includeIntro is false', () => {
         const result = filterUsjContent(contentWithIntro, true, {
           ...defaultOptions,
           includeIntro: false,
@@ -317,7 +369,7 @@ describe('Content Filtering', () => {
         });
 
         // Intro markers are only removed in first chapter
-        expect(result).toHaveLength(4);
+        expect(result).toHaveLength(5);
       });
     });
 
@@ -448,6 +500,7 @@ describe('Content Filtering', () => {
           includeIntro: false,
           includeRemarks: false,
           includeFigures: false,
+          includeBookHeaders: false,
         });
 
         expect(result).toHaveLength(4);
@@ -465,5 +518,87 @@ describe('Content Filtering', () => {
         expect(result).toEqual(stringContent);
       });
     });
+
+    // Issue #15: \id passes through the filter unchanged when present. It is
+    // only present in chapter 1's USJ — when the export starts at a later
+    // chapter, no book node is synthesised, so the filter never sees one.
+    describe('book identification (\\id) — issue #15', () => {
+      const contentWithBook: (UsjNode | string)[] = [
+        { type: 'book', marker: 'id', code: 'ROM' },
+        { type: 'para', marker: 'p', content: ['Body text'] },
+      ];
+
+      it('passes the book node through regardless of toggles', () => {
+        const result = filterUsjContent(contentWithBook, true, {
+          includeFootnotes: false,
+          includeCrossRefs: false,
+          includeIntro: false,
+          includeRemarks: false,
+          includeFigures: false,
+          includeBookHeaders: false,
+        });
+
+        expect(result).toHaveLength(2);
+        expect(result[0]).toMatchObject({ type: 'book', marker: 'id', code: 'ROM' });
+      });
+    });
+
+    describe('book-header (\\h, \\toc) filtering — issue #15', () => {
+      const contentWithHeaders: (UsjNode | string)[] = [
+        { type: 'book', marker: 'id', code: 'ROM' },
+        { type: 'para', marker: 'h', content: ['Romans'] },
+        { type: 'para', marker: 'toc1', content: ['The Letter of Paul to the Romans'] },
+        { type: 'para', marker: 'toc2', content: ['Romans'] },
+        { type: 'para', marker: 'toc3', content: ['Rom'] },
+        { type: 'para', marker: 'mt1', content: ['ROMANS'] },
+        { type: 'chapter', marker: 'c', number: '1' },
+        { type: 'para', marker: 'p', content: ['Paul, a servant...'] },
+      ];
+
+      it('keeps \\h and \\toc* in first chapter when includeBookHeaders is true', () => {
+        const result = filterUsjContent(contentWithHeaders, true, {
+          ...defaultOptions,
+          includeBookHeaders: true,
+        });
+
+        // book + h + toc1 + toc2 + toc3 + mt1 + chapter + p = 8
+        expect(result).toHaveLength(8);
+        expect(result.some((n) => typeof n !== 'string' && n.marker === 'h')).toBe(true);
+        expect(result.some((n) => typeof n !== 'string' && n.marker === 'toc1')).toBe(true);
+        expect(result.some((n) => typeof n !== 'string' && n.marker === 'toc3')).toBe(true);
+      });
+
+      it('removes \\h and \\toc* in first chapter when includeBookHeaders is false', () => {
+        const result = filterUsjContent(contentWithHeaders, true, {
+          ...defaultOptions,
+          includeBookHeaders: false,
+        });
+
+        // book (always) + mt1 + chapter + p = 4 (h, toc1-3 removed)
+        expect(result).toHaveLength(4);
+        expect(result.some((n) => typeof n !== 'string' && n.marker === 'h')).toBe(false);
+        expect(result.some((n) => typeof n !== 'string' && n.marker === 'toc1')).toBe(false);
+        expect(result.some((n) => typeof n !== 'string' && n.marker === 'toc3')).toBe(false);
+        // book id always preserved
+        expect(result[0]).toMatchObject({ type: 'book', code: 'ROM' });
+      });
+
+      it('keeps \\h on non-first chapters even when includeBookHeaders is false', () => {
+        // Non-first chapter USJ wouldn't normally have \h, but the filter
+        // should still leave it alone if it appeared.
+        const stragglerContent: (UsjNode | string)[] = [
+          { type: 'para', marker: 'h', content: ['Should not appear here'] },
+          { type: 'para', marker: 'p', content: ['Body'] },
+        ];
+
+        const result = filterUsjContent(stragglerContent, false, {
+          ...defaultOptions,
+          includeBookHeaders: false,
+        });
+
+        expect(result).toHaveLength(2);
+      });
+    });
+
   });
 });
