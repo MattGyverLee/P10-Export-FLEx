@@ -32,6 +32,8 @@ The workflow will:
 
 ### Installing from GitHub Releases
 
+**Requirements:** Paratext 10 Studio v0.3 or later. v0.5 is recommended.
+
 End users can install the extension by:
 
 1. Download the latest `flex-export_*.zip` from [GitHub Releases](../../releases)

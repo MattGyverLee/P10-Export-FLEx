@@ -4,6 +4,8 @@ All notable changes to P10-Export-FLEx are documented here.
 
 ## [0.2.0] — 2026-05-04
 
+**Requires:** Paratext 10 Studio v0.3 or later. **Recommended:** v0.5.
+
 ### New features
 
 - **Unified status strip** in FLEx Settings consolidates project-lock, sharing-disabled, verify-timeout, and resource-not-exportable messages with fully localized text.
