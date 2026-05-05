@@ -153,4 +153,4 @@ MIT. See [LICENSE](./LICENSE).
 
 ## Credits
 
-P10-Export-FLEx is a SIL International project. The export logic and writing-system tagging conventions are based on the FLExTrans `ImportFromParatext` module — credit to that team for figuring out the right way to do this in the first place.
+P10-Export-FLEx is built by the **FLExTools Team of SIL Global**. The export logic and writing-system tagging conventions are based on the FLExTrans `ImportFromParatext` module — credit to that team for figuring out the right way to do this in the first place.
