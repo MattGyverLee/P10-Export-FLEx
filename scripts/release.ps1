@@ -33,9 +33,9 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$repoRoot = Split-Path -Parent $PSScriptRoot
 $extensionDir = Join-Path $repoRoot "extension"
-$zipFile = Join-Path $extensionDir "release" "flex-export_$Version.zip"
+$zipFile = Join-Path $extensionDir "release\flex-export_$Version.zip"
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "P10-Export-FLEx Release Script" -ForegroundColor Cyan
@@ -64,7 +64,7 @@ Write-Host ""
 
 # Step 2: Verify bridge exists
 Write-Host "[2/3] Verifying bridge executable..." -ForegroundColor Green
-$bridgeExe = Join-Path $extensionDir "dist" "bridge" "FlexTextBridge.exe"
+$bridgeExe = Join-Path $extensionDir "dist\bridge\FlexTextBridge.exe"
 if (-not (Test-Path $bridgeExe)) {
     Write-Host "[WARN] FlexTextBridge.exe not found in dist/bridge/" -ForegroundColor Yellow
     Write-Host "[WARN] Build the bridge locally: cd bridge/FlexTextBridge && dotnet build -c Release" -ForegroundColor Yellow
