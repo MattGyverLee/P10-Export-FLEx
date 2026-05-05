@@ -34,6 +34,8 @@ namespace FlexTextBridge.Commands
             }
             catch (Exception ex)
             {
+                Services.Logger.LogError(ex, "ListProjects");
+
                 var result = new ListProjectsResult
                 {
                     Success = false,

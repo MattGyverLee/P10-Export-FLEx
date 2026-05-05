@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Reflection;
 using FlexTextBridge.Commands;
+using FlexTextBridge.Services;
 using Microsoft.Win32;
 
 namespace FlexTextBridge
@@ -91,6 +92,7 @@ namespace FlexTextBridge
             string title = null;
             string textGuid = null;
             string vernacularWs = null;
+            string logDir = null;
             bool overwrite = false;
             bool listProjects = false;
             bool projectInfo = false;
@@ -156,6 +158,11 @@ namespace FlexTextBridge
                         overwrite = true;
                         break;
 
+                    case "--log-dir":
+                        if (i + 1 < args.Length)
+                            logDir = args[++i];
+                        break;
+
                     case "--version":
                     case "-v":
                         showVersion = true;
@@ -182,45 +189,64 @@ namespace FlexTextBridge
                 return 0;
             }
 
-            if (listProjects)
-            {
-                var command = new ListProjectsCommand();
-                return command.Execute();
-            }
+            // Initialize file logger before dispatching commands so any failure path is captured.
+            Logger.Initialize(logDir);
 
-            if (checkText && !string.IsNullOrEmpty(project) && !string.IsNullOrEmpty(title))
+            try
             {
-                var command = new CheckTextCommand(project, title);
-                return command.Execute();
-            }
+                if (listProjects)
+                {
+                    var command = new ListProjectsCommand();
+                    return command.Execute();
+                }
 
-            if (verifyText && !string.IsNullOrEmpty(project) && !string.IsNullOrEmpty(textGuid))
+                if (checkText && !string.IsNullOrEmpty(project) && !string.IsNullOrEmpty(title))
+                {
+                    var command = new CheckTextCommand(project, title);
+                    return command.Execute();
+                }
+
+                if (verifyText && !string.IsNullOrEmpty(project) && !string.IsNullOrEmpty(textGuid))
+                {
+                    var command = new VerifyTextCommand(project, textGuid);
+                    return command.Execute();
+                }
+
+                if (checkFlexStatus && !string.IsNullOrEmpty(project))
+                {
+                    var command = new CheckFlexStatusCommand(project);
+                    return command.Execute();
+                }
+
+                if (projectInfo && !string.IsNullOrEmpty(project))
+                {
+                    var command = new ProjectInfoCommand(project);
+                    return command.Execute();
+                }
+
+                if (!string.IsNullOrEmpty(project) && !string.IsNullOrEmpty(title))
+                {
+                    var command = new CreateTextCommand(project, title, overwrite, vernacularWs);
+                    return command.Execute();
+                }
+
+                // No valid command
+                ShowHelp();
+                return 1;
+            }
+            catch (Exception ex)
             {
-                var command = new VerifyTextCommand(project, textGuid);
-                return command.Execute();
+                // Catch-all for crashes that escape command-level handlers (e.g. assembly load
+                // failures during dispatch). Log it so the user has a recoverable trail even if
+                // stdout/stderr never made it back to the extension.
+                Logger.LogError(ex, "Top-level dispatch");
+                try
+                {
+                    Console.Error.WriteLine($"{{\"success\":false,\"error\":\"Unhandled error: {ex.Message.Replace("\"", "\\\"")}\",\"errorCode\":\"UNKNOWN_ERROR\"}}");
+                }
+                catch { /* stderr may itself be unavailable */ }
+                return 2;
             }
-
-            if (checkFlexStatus && !string.IsNullOrEmpty(project))
-            {
-                var command = new CheckFlexStatusCommand(project);
-                return command.Execute();
-            }
-
-            if (projectInfo && !string.IsNullOrEmpty(project))
-            {
-                var command = new ProjectInfoCommand(project);
-                return command.Execute();
-            }
-
-            if (!string.IsNullOrEmpty(project) && !string.IsNullOrEmpty(title))
-            {
-                var command = new CreateTextCommand(project, title, overwrite, vernacularWs);
-                return command.Execute();
-            }
-
-            // No valid command
-            ShowHelp();
-            return 1;
         }
 
         static void ShowHelp()
@@ -246,6 +272,7 @@ namespace FlexTextBridge
             Console.Error.WriteLine("  -g, --guid <guid>            Text GUID for verification");
             Console.Error.WriteLine("  -w, --vernacular-ws <ws>     Vernacular writing system code (defaults to project default)");
             Console.Error.WriteLine("  -o, --overwrite              Overwrite existing text with the same name");
+            Console.Error.WriteLine("      --log-dir <path>         Directory to write error logs (default: %LOCALAPPDATA%\\SIL\\P10-Export-FLEx\\logs)");
             Console.Error.WriteLine("  -v, --version                Display version information");
             Console.Error.WriteLine("  -h, --help                   Show this help message");
             Console.Error.WriteLine();

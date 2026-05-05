@@ -89,6 +89,7 @@ namespace FlexTextBridge.Commands
             }
             catch (Exception ex)
             {
+                Services.Logger.LogError(ex, $"VerifyText (project='{_projectName}', guid='{_textGuid}')");
                 return OutputError($"Unexpected error: {ex.Message}", ErrorCodes.UnknownError);
             }
             finally

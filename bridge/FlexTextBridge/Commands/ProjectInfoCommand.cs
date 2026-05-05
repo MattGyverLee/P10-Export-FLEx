@@ -61,6 +61,7 @@ namespace FlexTextBridge.Commands
             }
             catch (Exception ex)
             {
+                Services.Logger.LogError(ex, $"ProjectInfo (project='{_projectName}')");
                 return OutputError($"Unexpected error: {ex.Message}", ErrorCodes.UnknownError);
             }
             finally

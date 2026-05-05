@@ -187,7 +187,12 @@ export async function activate(context: ExecutionActivationContext) {
   if (createProcess) {
     flexBridge = new FlexBridgeService(createProcess, context.executionToken);
     if (flexBridge.isSupported()) {
-      logger.info("FlexBridge service initialized for Windows platform");
+      const logDir = flexBridge.getLogDir();
+      logger.info(
+        logDir
+          ? `FlexBridge service initialized for Windows platform (bridge logs: ${logDir})`
+          : "FlexBridge service initialized for Windows platform"
+      );
     } else {
       logger.warn(`FlexBridge not supported on platform: ${flexBridge.getPlatformName()}`);
     }

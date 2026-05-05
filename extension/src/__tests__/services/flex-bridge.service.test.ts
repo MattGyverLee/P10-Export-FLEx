@@ -76,10 +76,20 @@ class FlexBridgeService {
   private createProcess: CreateProcess;
   private executionToken: ExtensionBasicData;
   private bridgePath = 'bridge/FlexTextBridge.exe';
+  private logDir: string | undefined;
 
   constructor(createProcess: CreateProcess, executionToken: ExtensionBasicData) {
     this.createProcess = createProcess;
     this.executionToken = executionToken;
+
+    const localAppData = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.LOCALAPPDATA;
+    if (localAppData) {
+      this.logDir = `${localAppData}\\SIL\\P10-Export-FLEx\\logs`;
+    }
+  }
+
+  getLogDir(): string | undefined {
+    return this.logDir;
   }
 
   isSupported(): boolean {
@@ -219,6 +229,7 @@ class FlexBridgeService {
   }
 
   private runBridge(args: string[], stdin?: string): Promise<string> {
+    const finalArgs = this.logDir ? ['--log-dir', this.logDir, ...args] : args;
     return new Promise((resolve, reject) => {
       let stdout = '';
       let stderr = '';
@@ -226,7 +237,7 @@ class FlexBridgeService {
       const process = this.createProcess.spawn(
         this.executionToken,
         this.bridgePath,
-        args,
+        finalArgs,
         { stdio: ['pipe', 'pipe', 'pipe'] }
       );
 
@@ -447,7 +458,7 @@ describe('FlexBridgeService', () => {
       expect(mockCreateProcess.spawn).toHaveBeenCalledWith(
         mockExecutionToken,
         'bridge/FlexTextBridge.exe',
-        ['--list-projects'],
+        expect.arrayContaining(['--list-projects']),
         expect.any(Object)
       );
     });
@@ -554,7 +565,7 @@ describe('FlexBridgeService', () => {
       expect(mockCreateProcess.spawn).toHaveBeenCalledWith(
         mockExecutionToken,
         'bridge/FlexTextBridge.exe',
-        ['--project', 'TestProject', '--title', 'Genesis 1', '--overwrite'],
+        expect.arrayContaining(['--project', 'TestProject', '--title', 'Genesis 1', '--overwrite']),
         expect.any(Object)
       );
     });
@@ -575,7 +586,7 @@ describe('FlexBridgeService', () => {
       expect(mockCreateProcess.spawn).toHaveBeenCalledWith(
         mockExecutionToken,
         'bridge/FlexTextBridge.exe',
-        ['--project', 'TestProject', '--title', 'Genesis 1', '--vernacular-ws', 'es'],
+        expect.arrayContaining(['--project', 'TestProject', '--title', 'Genesis 1', '--vernacular-ws', 'es']),
         expect.any(Object)
       );
     });

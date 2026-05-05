@@ -102,6 +102,7 @@ export class FlexBridgeService {
   private createProcess: CreateProcess;
   private executionToken: ExtensionBasicData;
   private bridgePath = "bridge/FlexTextBridge.exe";
+  private logDir: string | undefined;
 
   constructor(
     createProcess: CreateProcess,
@@ -109,6 +110,21 @@ export class FlexBridgeService {
   ) {
     this.createProcess = createProcess;
     this.executionToken = executionToken;
+
+    // Derive a log directory the bridge can write to. Bridge has its own fallback,
+    // but passing it explicitly keeps the path under the extension's control and
+    // mirrors what the bridge would compute itself on Windows.
+    const localAppData = process.env.LOCALAPPDATA;
+    if (localAppData) {
+      this.logDir = `${localAppData}\\SIL\\P10-Export-FLEx\\logs`;
+    }
+  }
+
+  /**
+   * Get the directory where the bridge writes its error logs.
+   */
+  getLogDir(): string | undefined {
+    return this.logDir;
   }
 
   /**
@@ -300,12 +316,17 @@ export class FlexBridgeService {
    * @returns Promise resolving to stdout output
    */
   private runBridge(args: string[], stdin?: string): Promise<string> {
+    // Prepend --log-dir so the bridge writes any failures to a known location.
+    const finalArgs = this.logDir
+      ? ["--log-dir", this.logDir, ...args]
+      : args;
+
     return new Promise((resolve, reject) => {
       let stdout = "";
       let stderr = "";
 
       const process: ChildProcessByStdio<Writable, Readable, Readable> =
-        this.createProcess.spawn(this.executionToken, this.bridgePath, args, {
+        this.createProcess.spawn(this.executionToken, this.bridgePath, finalArgs, {
           stdio: ["pipe", "pipe", "pipe"],
         });
 

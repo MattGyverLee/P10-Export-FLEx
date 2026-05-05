@@ -106,6 +106,7 @@ namespace FlexTextBridge.Commands
                 }
                 catch (Exception ex)
                 {
+                    Services.Logger.LogError(ex, $"CreateText.WriteFailed (project='{_projectName}', title='{_textTitle}')");
                     return OutputError($"Failed to create text: {ex.Message}", ErrorCodes.WriteFailed);
                 }
 
@@ -125,10 +126,12 @@ namespace FlexTextBridge.Commands
             }
             catch (JsonException ex)
             {
+                Services.Logger.LogError(ex, $"CreateText.InvalidUsj (project='{_projectName}', title='{_textTitle}')");
                 return OutputError($"Invalid USJ JSON: {ex.Message}", ErrorCodes.InvalidUsj);
             }
             catch (Exception ex)
             {
+                Services.Logger.LogError(ex, $"CreateText.Unexpected (project='{_projectName}', title='{_textTitle}')");
                 return OutputError($"Unexpected error: {ex.Message}", ErrorCodes.UnknownError);
             }
             finally
